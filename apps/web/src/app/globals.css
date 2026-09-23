@@ -1,0 +1,120 @@
+@import "../styles/tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-8) var(--page-gutter) var(--space-16);
+  display: grid;
+  gap: var(--space-8);
+}
+
+.overline {
+  margin: 0;
+  font: var(--text-overline);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+h1 {
+  margin: var(--space-2) 0 0;
+  font: var(--text-h1);
+}
+
+h2 {
+  margin: 0;
+  font: var(--text-h2);
+}
+
+.lede,
+.context-bar,
+.empty-panel p,
+.environment-chip {
+  color: var(--text-muted);
+}
+
+.lede {
+  max-width: 62ch;
+  margin: var(--space-3) 0 0;
+}
+
+.context-bar,
+.empty-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+}
+
+.context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+  background: var(--bg-subtle);
+}
+
+.context-bar p,
+.empty-panel p {
+  margin: 0;
+}
+
+.empty-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.environment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  min-height: 24px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  font: var(--text-caption);
+  color: var(--text);
+}
+
+.environment-chip-label {
+  font: var(--text-overline);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

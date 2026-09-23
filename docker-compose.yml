@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: forecastops
+      POSTGRES_PASSWORD: forecastops
+      POSTGRES_DB: forecastops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forecastops -d forecastops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      EXECUTION_MODE: ${EXECUTION_MODE:-local}
+      AWS_ENABLED: ${AWS_ENABLED:-false}
+      BEDROCK_ENABLED: ${BEDROCK_ENABLED:-false}
+      SAGEMAKER_ENABLED: ${SAGEMAKER_ENABLED:-false}
+      ONLINE_INFERENCE: ${ONLINE_INFERENCE:-false}
+      AI_ENABLED: ${AI_ENABLED:-true}
+      TRAINING_ENABLED: ${TRAINING_ENABLED:-true}
+      AWS_ML_ENABLED: ${AWS_ML_ENABLED:-false}
+      MAX_BEDROCK_CALLS_PER_DAY: ${MAX_BEDROCK_CALLS_PER_DAY:-30}
+      MAX_BEDROCK_INPUT_TOKENS: ${MAX_BEDROCK_INPUT_TOKENS:-5000}
+      MAX_BEDROCK_OUTPUT_TOKENS: ${MAX_BEDROCK_OUTPUT_TOKENS:-700}
+      MAX_TRAINING_JOBS_PER_DAY: ${MAX_TRAINING_JOBS_PER_DAY:-2}
+      MAX_TRAINING_RUNTIME_MINUTES: ${MAX_TRAINING_RUNTIME_MINUTES:-45}
+      ALLOW_GPU_TRAINING: ${ALLOW_GPU_TRAINING:-false}
+      MAX_BATCH_INFERENCE_JOBS_PER_DAY: ${MAX_BATCH_INFERENCE_JOBS_PER_DAY:-5}
+      MAX_DATASET_ROWS_DEMO: ${MAX_DATASET_ROWS_DEMO:-2000000}
+      MAX_FORECAST_HORIZON_DAYS: ${MAX_FORECAST_HORIZON_DAYS:-90}
+      RANDOM_SEED: ${RANDOM_SEED:-20260921}
+      DATABASE_URL: postgresql+psycopg://forecastops:forecastops@postgres:5432/forecastops
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

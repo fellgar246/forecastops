@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadTrainingData",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "${data_bucket_arn}/*"
+    },
+    {
+      "Sid": "ListTrainingBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["${data_bucket_arn}", "${artifacts_bucket_arn}"]
+    },
+    {
+      "Sid": "WriteTrainingArtifacts",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "${artifacts_bucket_arn}/*"
+    }
+  ]
+}

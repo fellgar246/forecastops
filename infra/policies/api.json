@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadWriteMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "${metadata_table_arn}"
+    },
+    {
+      "Sid": "ReadForecasts",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "${forecasts_bucket_arn}/*"
+    },
+    {
+      "Sid": "ListForecasts",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "${forecasts_bucket_arn}"
+    },
+    {
+      "Sid": "WriteApiLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": ["${log_group_arn}", "${log_group_arn}:*"]
+    },
+    {
+      "Sid": "AssumeExplanationRole",
+      "Effect": "Allow",
+      "Action": ["sts:AssumeRole"],
+      "Resource": "${explanation_role_arn}"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+"""Simple forecast baselines."""

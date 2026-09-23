@@ -1,0 +1,15 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+node_modules
+apps/web/node_modules
+apps/web/.next
+_origen
+.terraform
+*.tfstate
+*.tfstate.*
+infra/modules/lambda/build

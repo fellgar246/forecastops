@@ -1,0 +1,4 @@
+date,store_id,sku_id,category_id,units_sold,price
+2026-01-01,store-1,sku-1,beverages,10,4.50
+2026-01-02,store-1,sku-1,beverages,12,4.50
+2026-01-01,store-2,sku-2,snacks,4,2.25

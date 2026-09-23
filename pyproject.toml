@@ -1,0 +1,69 @@
+[project]
+name = "forecastops"
+version = "0.1.0"
+description = "Retail demand forecasting platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "forecastops-api",
+  "forecastops-contracts",
+  "forecastops-ml",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/api", "ml", "packages/contracts"]
+
+[tool.uv.sources]
+forecastops-api = { workspace = true }
+forecastops-contracts = { workspace = true }
+forecastops-ml = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.0",
+  "mypy>=1.14.0",
+  "pytest>=8.3.0",
+  "ruff>=0.9.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = [
+  "apps/api/forecastops_api",
+  "ml/forecastops_ml",
+  "packages/contracts/forecastops_contracts",
+]
+extend-exclude = [
+  ".venv",
+  "apps/web",
+  "node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["forecastops_api", "forecastops_contracts", "forecastops_ml"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["forecastops_api", "forecastops_contracts", "forecastops_ml"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = [
+  "apps/api/tests",
+  "ml/tests",
+  "packages/contracts/tests",
+  "packages/fixtures/tests",
+  "tests",
+]

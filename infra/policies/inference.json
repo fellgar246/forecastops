@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadModelArtifacts",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "${artifacts_bucket_arn}/*"
+    },
+    {
+      "Sid": "ListInferenceBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["${artifacts_bucket_arn}", "${forecasts_bucket_arn}"]
+    },
+    {
+      "Sid": "WriteForecasts",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "${forecasts_bucket_arn}/*"
+    }
+  ]
+}
