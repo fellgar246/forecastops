@@ -1,0 +1,3 @@
+sku_id,category_id,product_brand,product_lifecycle
+sku-001,beverages,Northwind,mature
+sku-002,snacks,Lumen,mature

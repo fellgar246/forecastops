@@ -1,0 +1,11 @@
+date,store_id,sku_id,category_id,units_sold,price,promotion,discount_pct,stockout
+2026-09-26,store-99,sku-001,beverages,10,4.50,false,0,false
+2026-09-27,store-99,sku-001,beverages,11,4.50,false,0,false
+2026-09-28,store-99,sku-001,beverages,12,4.50,true,10,false
+2026-09-29,store-99,sku-001,beverages,10,4.50,false,0,false
+2026-09-30,store-99,sku-001,beverages,9,4.50,false,0,false
+2026-09-26,store-01,sku-002,snacks,8,2.25,false,0,false
+2026-09-27,store-01,sku-002,snacks,8,2.25,false,0,false
+2026-09-28,store-01,sku-002,snacks,9,2.25,false,0,false
+2026-09-29,store-01,sku-002,snacks,8,2.25,false,0,false
+2026-09-30,store-01,sku-002,snacks,8,2.25,false,0,false
