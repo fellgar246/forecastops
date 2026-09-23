@@ -45,6 +45,19 @@ make seed-data OUT=data/synthetic PROFILE=test
 - `categories.csv` and `categories.parquet`
 - `summary.json` — seed, row count, date range, and catalog counts
 
+Profile that dataset with:
+
+```bash
+make profile-data OUT=data/synthetic
+```
+
+`make profile-data` reads the directory in `OUT` and writes `profile.json` beside the tables. The file describes the demand distribution, category volume, weekday and month seasonality, promotion lift by category, stock-out prevalence, sparsity, and series length. To profile the small test dataset:
+
+```bash
+make seed-data OUT=data/synthetic PROFILE=test
+make profile-data OUT=data/synthetic
+```
+
 `make aws-deploy`, `make aws-status`, `make aws-cost-check`, `make aws-destroy`, and `make aws-clean-artifacts` are reserved and do not call cloud APIs.
 
 ## Cloud profile

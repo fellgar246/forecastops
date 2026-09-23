@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
 
 test:
 	uv run pytest
@@ -17,6 +17,9 @@ PROFILE ?= default
 
 seed-data:
 	uv run python scripts/seed/seed_data.py --output $(OUT) --profile $(PROFILE)
+
+profile-data:
+	uv run python scripts/profile/profile_data.py --dataset $(OUT)
 
 aws-plan:
 	./scripts/aws/plan.sh
