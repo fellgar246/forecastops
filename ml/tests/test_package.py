@@ -7,6 +7,7 @@ import forecastops_ml.explainability
 import forecastops_ml.features
 import forecastops_ml.inference
 import forecastops_ml.pipelines
+import forecastops_ml.promotion
 import forecastops_ml.training
 
 
@@ -20,5 +21,6 @@ def test_library_modules_import() -> None:
         forecastops_ml.inference,
         forecastops_ml.explainability,
         forecastops_ml.pipelines,
+        forecastops_ml.promotion,
     ]
     assert all(module.__doc__ for module in modules)

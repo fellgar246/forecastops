@@ -102,3 +102,17 @@ Identifiers are categorical. Their codes are fit on the training rows of that fo
 Forecasts are `p50`. `p10` and `p90` stay null. The same fixture, config, and `RANDOM_SEED` (`20260921`) reproduce `p50` within a relative tolerance of 1e-6.
 
 `attribute` returns SHAP values for one prediction row. `positive_drivers` and `negative_drivers` list at most five features each, ordered by magnitude. They are associations from the trees.
+
+## Promotion
+
+A finished training job is registered as `TRAINED`. Recording its evaluation moves it to `EVALUATED`. Neither step sets `APPROVED`.
+
+`gate` compares the candidate evaluation with a reference evaluation. The candidate must beat the reference on WAPE (`candidate < reference`), keep `abs(bias)` strictly below `0.05`, and avoid a category WAPE that worsens by more than `0.02`. A worsening of exactly `0.02` is still allowed. Categories present on only one report are not compared.
+
+When the candidate report has a P90 pinball loss, pass empirical P90 coverage: the share of actuals at or below `p90`. That share must be at least `0.85`. `empirical_p90_coverage` computes it. When the pinball loss is null, the coverage clause is skipped and the decision stores `p90_coverage` as null. Gradient boosting takes that path.
+
+A passing gate sets `PENDING_APPROVAL` and records no rejection reason. A failing gate sets `REJECTED` with reason `quality_gate` and does not ask for an actor. Segment findings name each regressed category. The decision stores the candidate id, reference id, threshold snapshot, boolean checks, status, reason, and timestamp.
+
+`approve` moves `PENDING_APPROVAL` to `APPROVED` and requires an actor id. `reject` moves `PENDING_APPROVAL` to `REJECTED` with that actor id and reason `human`. `promote` moves `APPROVED` to `PRODUCTION` with an actor id and returns the previous production model of the same family to `APPROVED`. No other status enters production.
+
+When no production evaluation exists, `reference_report` scores seasonal naive on the same frame and dataset version. Daily frames use a 7-day lag. Weekly frames use a 52-week lag. A production report is returned unchanged when one is supplied.
