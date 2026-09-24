@@ -19,3 +19,20 @@ def test_health_reports_local_profile_with_cloud_flags_off() -> None:
     assert body["aws_enabled"] is False
     assert body["bedrock_enabled"] is False
     assert body["sagemaker_enabled"] is False
+
+
+def test_aws_health_reports_each_cloud_integration_disabled() -> None:
+    get_settings.cache_clear()
+    client = TestClient(app)
+
+    response = client.get("/health/aws")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "aws_enabled": False,
+        "aws_ml_enabled": False,
+        "bedrock_enabled": False,
+        "sagemaker_enabled": False,
+        "online_inference": False,
+    }

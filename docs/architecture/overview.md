@@ -16,7 +16,9 @@ Browser → Next.js → FastAPI → PostgreSQL
 
 `make seed-data` writes the demo retail history as local files. The default run is the full daily catalog. Tests use a smaller profile and do not build that file.
 
-The API reads one settings object. Missing required values stop startup with an English error. `GET /health` reports `healthy` and the cloud flags.
+The API reads one settings object. Missing required values stop startup with an English error. `GET /health` reports `healthy` and `execution_mode=local`. `GET /health/aws` reports each cloud integration. With the cloud flags off, training and forecasting stay in this process and write artifacts under the local artifact directory.
+
+Datasets, training runs, model versions, forecast runs, and promotion decisions are stored in PostgreSQL. A client registers a dataset, validates it, starts training, approves the model, and reads forecast points from `GET /forecasts/{id}/series`. Training and forecast requests return `202` with a job id. Only a model in `APPROVED` or `PRODUCTION` can be used to forecast. Explanation routes respond that explanations are not enabled.
 
 ## Cloud profile
 

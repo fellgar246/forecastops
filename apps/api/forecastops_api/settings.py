@@ -2,6 +2,7 @@
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     random_seed: int
     database_url: str = "postgresql+psycopg://forecastops:forecastops@localhost:5432/forecastops"
     web_origin: str = "http://localhost:3000"
+    artifact_dir: Path = Path("var/artifacts")
 
 
 def load_settings() -> Settings:

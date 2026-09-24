@@ -1,0 +1,204 @@
+"""Request and response models for the local forecast API."""
+
+from datetime import date, datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+ModelFamily = Literal["naive", "seasonal_naive", "holt_winters", "gradient_boosting", "deepar"]
+DatasetSource = Literal["synthetic", "upload"]
+DatasetStatus = Literal["registered", "valid", "invalid"]
+Granularity = Literal["day", "week"]
+ForecastStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]
+TrainingStatus = Literal[
+    "QUEUED",
+    "PREPROCESSING",
+    "TRAINING",
+    "EVALUATING",
+    "REGISTERING",
+    "COMPLETED",
+    "FAILED",
+]
+ModelStatusName = Literal[
+    "TRAINED",
+    "EVALUATED",
+    "PENDING_APPROVAL",
+    "APPROVED",
+    "PRODUCTION",
+    "REJECTED",
+]
+
+
+class AcceptedJob(BaseModel):
+    """Acknowledgement for work the client polls later."""
+
+    job_id: str
+
+
+class DatasetCreate(BaseModel):
+    """Register an existing dataset directory."""
+
+    name: str = Field(min_length=1)
+    source: DatasetSource
+    uri: str = Field(min_length=1)
+
+
+class DatasetValidate(BaseModel):
+    """Optional as-of date for the staleness check."""
+
+    as_of: date | None = None
+
+
+class DatasetResponse(BaseModel):
+    """One dataset snapshot."""
+
+    id: str
+    name: str
+    version: str
+    source: DatasetSource
+    status: DatasetStatus
+    uri: str
+    schema_version: str
+    row_count: int
+    date_min: date | None
+    date_max: date | None
+    quality_report: dict[str, object] | None
+    created_at: datetime
+
+
+class DatasetList(BaseModel):
+    """Datasets in registration order."""
+
+    items: list[DatasetResponse]
+
+
+class TrainingCreate(BaseModel):
+    """Start a local training run."""
+
+    dataset_id: str
+    model_family: ModelFamily
+    configuration: dict[str, object] = Field(default_factory=dict)
+
+
+class TrainingResponse(BaseModel):
+    """One training run."""
+
+    id: str
+    dataset_version: str
+    model_family: str
+    configuration: dict[str, object]
+    status: TrainingStatus
+    started_at: datetime | None
+    finished_at: datetime | None
+    artifact_uri: str
+    metrics: dict[str, object] | None
+    git_sha: str
+    pipeline_execution_arn: str
+    created_at: datetime
+
+
+class TrainingList(BaseModel):
+    """Training runs in creation order."""
+
+    items: list[TrainingResponse]
+
+
+class ModelResponse(BaseModel):
+    """One model version."""
+
+    id: str
+    model_family: str
+    version: str
+    training_run_id: str
+    dataset_version: str
+    registry_arn: str
+    status: ModelStatusName
+    metrics: dict[str, object] | None
+    approved_at: datetime | None
+    created_at: datetime
+
+
+class ModelList(BaseModel):
+    """Model versions in registration order."""
+
+    items: list[ModelResponse]
+
+
+class ApproveRequest(BaseModel):
+    """Human approval. ``promote`` also moves the model into production."""
+
+    actor_id: str = Field(min_length=1)
+    promote: bool = False
+
+
+class RejectRequest(BaseModel):
+    """Human rejection. The reason must be ``human``."""
+
+    actor_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class ForecastCreate(BaseModel):
+    """Request a batch forecast from an approved model."""
+
+    model_id: str
+    horizon: int = Field(gt=0)
+    granularity: Granularity = "day"
+    dataset_id: str | None = None
+
+
+class ForecastResponse(BaseModel):
+    """One forecast run."""
+
+    id: str
+    model_version: str
+    dataset_version: str
+    horizon: int
+    granularity: Granularity
+    status: ForecastStatus
+    output_uri: str
+    created_at: datetime
+
+
+class ForecastList(BaseModel):
+    """Forecast runs in request order."""
+
+    items: list[ForecastResponse]
+
+
+class ForecastPointResponse(BaseModel):
+    """One forecast point. ``p10`` and ``p90`` are null until the model emits them."""
+
+    series_id: str
+    date: date
+    p10: float | None
+    p50: float
+    p90: float | None
+    actual: float | None
+
+
+class ForecastSeries(BaseModel):
+    """Points produced by one forecast run."""
+
+    items: list[ForecastPointResponse]
+
+
+class ModelPerformance(BaseModel):
+    """Scores stored on registered models."""
+
+    items: list[ModelResponse]
+
+
+class DataQualityItem(BaseModel):
+    """Latest quality report stored for a dataset."""
+
+    dataset_id: str
+    dataset_version: str
+    status: DatasetStatus
+    quality_report: dict[str, object] | None
+
+
+class DataQualityList(BaseModel):
+    """Quality reports in dataset registration order."""
+
+    items: list[DataQualityItem]

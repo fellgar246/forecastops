@@ -1,7 +1,4 @@
-"""SQLAlchemy base used by Alembic.
-
-The metadata starts empty. Later migrations add domain tables.
-"""
+"""SQLAlchemy base used by Alembic and the domain tables."""
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
@@ -16,6 +13,6 @@ NAMING_CONVENTION = {
 
 
 class Base(DeclarativeBase):
-    """Declarative base shared by future domain models."""
+    """Declarative base shared by the domain tables."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)

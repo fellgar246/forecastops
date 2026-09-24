@@ -6,9 +6,13 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from forecastops_api.errors import install_error_handlers
 from forecastops_api.health import router as health_router
 from forecastops_api.logging import configure_logging
+from forecastops_api.routes import router as forecast_router
 from forecastops_api.settings import Settings, get_settings
 
 
@@ -35,6 +39,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     resolved = settings if settings is not None else get_settings()
     application = FastAPI(title="ForecastOps API", version="0.1.0", lifespan=lifespan)
+    application.state.settings = resolved
+    application.state.artifact_dir = resolved.artifact_dir
+    engine = create_engine(resolved.database_url)
+    application.state.engine = engine
+    application.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[resolved.web_origin],
@@ -42,7 +51,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+    install_error_handlers(application)
     application.include_router(health_router)
+    application.include_router(forecast_router)
     return application
 
 
