@@ -18,6 +18,9 @@ class HealthResponse(BaseModel):
     aws_enabled: bool
     bedrock_enabled: bool
     sagemaker_enabled: bool
+    training_enabled: bool
+    max_forecast_horizon_days: int
+    max_training_jobs_per_day: int
 
 
 class AwsHealthResponse(BaseModel):
@@ -41,6 +44,9 @@ def health() -> HealthResponse:
         aws_enabled=settings.aws_enabled,
         bedrock_enabled=settings.bedrock_enabled,
         sagemaker_enabled=settings.sagemaker_enabled,
+        training_enabled=settings.training_enabled,
+        max_forecast_horizon_days=settings.max_forecast_horizon_days,
+        max_training_jobs_per_day=settings.max_training_jobs_per_day,
     )
 
 

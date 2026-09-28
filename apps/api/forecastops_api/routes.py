@@ -1,21 +1,23 @@
 """HTTP routes for the local forecast lifecycle."""
 
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.orm import Session, sessionmaker
 
+from forecastops_api.artifacts import ArtifactStore
 from forecastops_api.errors import ApiError, ErrorBody
 from forecastops_api.repositories import Repository
 from forecastops_api.schemas import (
     AcceptedJob,
     ApproveRequest,
     DataQualityList,
+    DatasetCatalog,
     DatasetCreate,
     DatasetList,
     DatasetResponse,
+    DatasetUploadResponse,
     DatasetValidate,
     ForecastCreate,
     ForecastList,
@@ -24,6 +26,8 @@ from forecastops_api.schemas import (
     ModelList,
     ModelPerformance,
     ModelResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
     RejectRequest,
     TrainingCreate,
     TrainingList,
@@ -32,9 +36,6 @@ from forecastops_api.schemas import (
 from forecastops_api.services import (
     ForecastService,
     dataset_response,
-    forecast_response,
-    model_response,
-    point_response,
     training_response,
 )
 from forecastops_api.settings import Settings
@@ -66,8 +67,8 @@ def get_service(request: Request, session: SessionDep) -> ForecastService:
     """Build the forecast service for this request."""
 
     settings: Settings = request.app.state.settings
-    artifact_dir: Path = request.app.state.artifact_dir
-    return ForecastService(Repository(session), settings, artifact_dir)
+    artifacts: ArtifactStore = request.app.state.artifact_store
+    return ForecastService(Repository(session), settings, artifacts)
 
 
 ServiceDep = Annotated[ForecastService, Depends(get_service)]
@@ -79,6 +80,29 @@ def create_dataset(body: DatasetCreate, service: ServiceDep) -> AcceptedJob:
 
     dataset = service.register_dataset(body)
     return AcceptedJob(job_id=dataset.id)
+
+
+@router.post("/datasets/uploads", status_code=201, response_model=DatasetUploadResponse)
+def upload_dataset(
+    service: ServiceDep,
+    file: Annotated[UploadFile, File()],
+) -> DatasetUploadResponse:
+    """Store a dataset file. Local mode accepts the bytes directly."""
+
+    filename = file.filename or ""
+    body = file.file.read()
+    payload = body if isinstance(body, bytes) else bytes(body)
+    return service.store_uploaded_dataset(filename, payload)
+
+
+@router.post("/datasets/upload-url", response_model=PresignedUploadResponse)
+def create_presigned_dataset_upload(
+    body: PresignedUploadRequest,
+    service: ServiceDep,
+) -> PresignedUploadResponse:
+    """Issue a pre-signed URL when remote artifact storage is enabled."""
+
+    return service.issue_presigned_upload(body.name)
 
 
 @router.get("/datasets", response_model=DatasetList)
@@ -93,6 +117,13 @@ def get_dataset(dataset_id: str, service: ServiceDep) -> DatasetResponse:
     """Return one dataset."""
 
     return dataset_response(service.get_dataset(dataset_id))
+
+
+@router.get("/datasets/{dataset_id}/catalog", response_model=DatasetCatalog)
+def dataset_catalog(dataset_id: str, service: ServiceDep) -> DatasetCatalog:
+    """Return stores, categories, and SKUs for forecast filters."""
+
+    return service.catalog(dataset_id)
 
 
 @router.post("/datasets/{dataset_id}/validate", response_model=DatasetResponse)
@@ -135,14 +166,14 @@ def get_training_run(run_id: str, service: ServiceDep) -> TrainingResponse:
 def list_models(service: ServiceDep) -> ModelList:
     """List model versions."""
 
-    return ModelList(items=[model_response(row) for row in service.list_models()])
+    return ModelList(items=[service.present_model(row) for row in service.list_models()])
 
 
 @router.get("/models/{model_id}", response_model=ModelResponse)
 def get_model(model_id: str, service: ServiceDep) -> ModelResponse:
     """Return one model version."""
 
-    return model_response(service.get_model(model_id))
+    return service.present_model(service.get_model(model_id))
 
 
 @router.post("/models/{model_id}/approve", response_model=ModelResponse)
@@ -153,7 +184,7 @@ def approve_model(
 ) -> ModelResponse:
     """Approve a model that is waiting for a person."""
 
-    return model_response(service.approve(model_id, body))
+    return service.present_model(service.approve(model_id, body))
 
 
 @router.post("/models/{model_id}/reject", response_model=ModelResponse)
@@ -164,7 +195,7 @@ def reject_model(
 ) -> ModelResponse:
     """Reject a model that is waiting for a person."""
 
-    return model_response(service.reject(model_id, body))
+    return service.present_model(service.reject(model_id, body))
 
 
 @router.post("/forecasts", status_code=202, response_model=AcceptedJob)
@@ -182,32 +213,34 @@ def create_forecast(
 def list_forecasts(service: ServiceDep) -> ForecastList:
     """List forecast runs."""
 
-    return ForecastList(
-        items=[
-            forecast_response(row, service.get_model(row.model_version_id).version)
-            for row in service.list_forecasts()
-        ]
-    )
+    return ForecastList(items=[service.present_forecast(row) for row in service.list_forecasts()])
 
 
 @router.get("/forecasts/{forecast_id}", response_model=ForecastResponse)
 def get_forecast(forecast_id: str, service: ServiceDep) -> ForecastResponse:
     """Return one forecast run."""
 
-    forecast = service.get_forecast(forecast_id)
-    model = service.get_model(forecast.model_version_id)
-    return forecast_response(forecast, model.version)
+    return service.present_forecast(service.get_forecast(forecast_id))
 
 
 @router.get("/forecasts/{forecast_id}/series", response_model=ForecastSeries)
 def get_forecast_series(
     forecast_id: str,
     service: ServiceDep,
+    category: Annotated[str | None, Query()] = None,
+    sku: Annotated[str | None, Query()] = None,
+    store: Annotated[str | None, Query()] = None,
+    horizon: Annotated[int | None, Query()] = None,
 ) -> ForecastSeries:
-    """Return forecast points, including ``p50``."""
+    """Return forecast points for the requested category, SKU, store, and horizon."""
 
-    points = [point_response(row) for row in service.forecast_series(forecast_id)]
-    return ForecastSeries(items=points)
+    return service.forecast_series(
+        forecast_id,
+        category=_blank_to_none(category),
+        sku=_blank_to_none(sku),
+        store=_blank_to_none(store),
+        horizon=horizon,
+    )
 
 
 @router.post(
@@ -238,7 +271,9 @@ def get_explanation(forecast_id: str) -> ErrorBody:
 def model_performance(service: ServiceDep) -> ModelPerformance:
     """Return stored model metrics."""
 
-    return ModelPerformance(items=[model_response(row) for row in service.model_performance()])
+    return ModelPerformance(
+        items=[service.present_model(row) for row in service.model_performance()]
+    )
 
 
 @router.get("/metrics/data-quality", response_model=DataQualityList)
@@ -246,6 +281,12 @@ def data_quality(service: ServiceDep) -> DataQualityList:
     """Return stored dataset quality reports."""
 
     return DataQualityList(items=service.data_quality())
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None or value.strip() == "":
+        return None
+    return value
 
 
 @router.post("/admin/retrain", status_code=202, response_model=AcceptedJob)

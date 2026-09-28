@@ -40,3 +40,32 @@ resource "aws_s3_bucket_policy" "deny_insecure" {
 
   depends_on = [aws_s3_bucket_public_access_block.this]
 }
+
+resource "aws_s3_bucket_versioning" "this" {
+  for_each = aws_s3_bucket.this
+
+  bucket = each.value.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "noncurrent" {
+  for_each = aws_s3_bucket.this
+
+  bucket = each.value.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_version_expiration_days
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.this]
+}

@@ -5,10 +5,12 @@ description = "HTTP API for the retail demand forecasting platform"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.14.0",
+  "boto3>=1.35.0",
   "fastapi>=0.115.0",
   "forecastops-ml",
   "psycopg[binary]>=3.2.0",
   "pydantic-settings>=2.6.0",
+  "python-multipart>=0.0.18",
   "sqlalchemy>=2.0.36",
   "structlog>=24.4.0",
   "uvicorn>=0.32.0",

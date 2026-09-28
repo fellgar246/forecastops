@@ -103,7 +103,7 @@ def test_resources_use_required_tags() -> None:
 
 def test_architecture_records_exist() -> None:
     adr_dir = ROOT / "docs" / "adr"
-    assert len(list(adr_dir.glob("*.md"))) == 6
+    assert len(list(adr_dir.glob("*.md"))) == 7
     assert (ROOT / "docs" / "architecture" / "overview.md").is_file()
 
 

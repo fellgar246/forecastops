@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from forecastops_api.artifacts import LocalArtifactStore
 from forecastops_api.db import Base
 from forecastops_api.main import create_app
 from forecastops_api.settings import get_settings
@@ -56,6 +57,9 @@ def test_local_workflow_trains_seasonal_naive_and_returns_p50(tmp_path: Path) ->
     assert run.status_code == 200
     assert run.json()["status"] == "COMPLETED"
     assert run.json()["pipeline_execution_arn"] == ""
+    artifact_uri = run.json()["artifact_uri"]
+    assert artifact_uri.endswith(f"training/{run_id}/evaluation.json")
+    assert Path(artifact_uri).is_file()
 
     model_id = client.get("/models").json()["items"][0]["id"]
     pending = client.post(
@@ -75,12 +79,37 @@ def test_local_workflow_trains_seasonal_naive_and_returns_p50(tmp_path: Path) ->
     )
     assert forecast.status_code == 202
     forecast_id = forecast.json()["job_id"]
-    assert client.get(f"/forecasts/{forecast_id}").json()["status"] == "SUCCEEDED"
+    stored = client.get(f"/forecasts/{forecast_id}").json()
+    assert stored["status"] == "SUCCEEDED"
+    assert stored["output_uri"].endswith(f"forecasts/{forecast_id}/forecast.json")
+    assert Path(stored["output_uri"]).is_file()
     series = client.get(f"/forecasts/{forecast_id}/series")
     assert series.status_code == 200
-    points = series.json()["items"]
+    body = series.json()
+    points = body["items"]
     assert points
     assert all(point["p50"] is not None for point in points)
+    assert body["p50_total"] == sum(point["p50"] for point in points)
+    assert body["series"]
+    store_id = points[0]["series_id"].split("|", 1)[0]
+    filtered = client.get(f"/forecasts/{forecast_id}/series", params={"store": store_id})
+    assert filtered.status_code == 200
+    assert filtered.json()["items"]
+    assert all(item["series_id"].startswith(f"{store_id}|") for item in filtered.json()["items"])
+    missing = client.get(
+        f"/forecasts/{forecast_id}/series",
+        params={"store": "missing-store", "category": "missing-category"},
+    )
+    assert missing.json()["items"] == []
+    assert missing.json()["p50_total"] is None
+    dataset_id = client.get(f"/forecasts/{forecast_id}").json()["dataset_id"]
+    catalog = client.get(f"/datasets/{dataset_id}/catalog")
+    assert catalog.status_code == 200
+    assert catalog.json()["categories"]
+    category_id = catalog.json()["categories"][0]["id"]
+    scoped = client.get(f"/forecasts/{forecast_id}/series", params={"category": category_id})
+    assert scoped.status_code == 200
+    assert scoped.json()["items"]
     assert "boto3" not in sys.modules
 
     explanation = client.post(f"/forecasts/{forecast_id}/explanation")
@@ -156,6 +185,7 @@ def _client(tmp_path: Path) -> TestClient:
     application.state.engine = engine
     application.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     application.state.artifact_dir = tmp_path / "artifacts"
+    application.state.artifact_store = LocalArtifactStore(application.state.artifact_dir)
     Base.metadata.create_all(engine)
     return TestClient(application)
 

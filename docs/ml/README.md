@@ -103,6 +103,25 @@ Forecasts are `p50`. `p10` and `p90` stay null. The same fixture, config, and `R
 
 `attribute` returns SHAP values for one prediction row. `positive_drivers` and `negative_drivers` list at most five features each, ordered by magnitude. They are associations from the trees.
 
+## Global probabilistic model
+
+`deepar` trains one model on many related series and returns P10, P50, and P90. The demo grain is week. Use the small test dataset, which contains more than one series. Leave the full daily fact table for local profiling.
+
+```bash
+make seed-data OUT=data/synthetic PROFILE=test
+make train-deepar DATASET=data/synthetic
+```
+
+`make train-deepar` submits one training job when `SAGEMAKER_ENABLED`, `TRAINING_ENABLED`, and `AWS_ML_ENABLED` are all true, `ALLOW_GPU_TRAINING` is false, and the runtime and daily job values stay within the ceilings below. A closed flag prints an English reason and the process stops before the training API. Set those flags in the environment for the run you intend to start. CI does not run this command, and merging a pull request does not start a job.
+
+The job uses one `ml.c5.xlarge` CPU instance. The runtime cap is 45 minutes (`MAX_TRAINING_RUNTIME_MINUTES`). At most 2 jobs can start in a day (`MAX_TRAINING_JOBS_PER_DAY`). Hyperparameters are fixed, including quantiles 0.1, 0.5, and 0.9. There is no hyperparameter search. The job does not create a real-time endpoint.
+
+Each series is JSON lines with `start`, `target`, `cat` (store and category), and `dynamic_feat` (promotion and holiday). Week frequency is `1W` and day frequency is `1D`. The train target stops at the forecast horizon. Promotion and holiday for that horizon stay on the train channel when those dates are in the dataset. A horizon plan can add the same two features for periods after the last observation.
+
+Channel files are written under `training/{job}/`. Model output is `models/{job}/`. The bucket is `ARTIFACTS_BUCKET`, the role is `DEEPAR_ROLE_ARN`, and the training image is the DeepAR algorithm image in `us-east-1`.
+
+A forecast point is kept when `p10`, `p50`, and `p90` are finite and `p10 <= p50 <= p90`. Local tests use `FakeDeepARRunner`, which returns a fixture forecast with those quantiles and does not call a training account.
+
 ## Promotion
 
 A finished training job is registered as `TRAINED`. Recording its evaluation moves it to `EVALUATED`. Neither step sets `APPROVED`.

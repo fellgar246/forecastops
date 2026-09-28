@@ -17,3 +17,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["forecastops_ml"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"forecastops_ml/training/fixtures/deepar_forecast.json" = "forecastops_ml/training/fixtures/deepar_forecast.json"

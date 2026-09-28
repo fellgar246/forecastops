@@ -43,6 +43,27 @@ class DatasetCreate(BaseModel):
     uri: str = Field(min_length=1)
 
 
+class DatasetUploadResponse(BaseModel):
+    """Location of a dataset object stored by the API."""
+
+    uri: str
+    name: str
+
+
+class PresignedUploadRequest(BaseModel):
+    """File name the client will upload with a pre-signed URL."""
+
+    name: str = Field(min_length=1)
+
+
+class PresignedUploadResponse(BaseModel):
+    """Short-lived URL for uploading one dataset object."""
+
+    url: str
+    uri: str
+    expires_in: int
+
+
 class DatasetValidate(BaseModel):
     """Optional as-of date for the staleness check."""
 
@@ -84,6 +105,7 @@ class TrainingResponse(BaseModel):
     """One training run."""
 
     id: str
+    dataset_id: str
     dataset_version: str
     model_family: str
     configuration: dict[str, object]
@@ -92,6 +114,7 @@ class TrainingResponse(BaseModel):
     finished_at: datetime | None
     artifact_uri: str
     metrics: dict[str, object] | None
+    error_message: str | None
     git_sha: str
     pipeline_execution_arn: str
     created_at: datetime
@@ -103,6 +126,34 @@ class TrainingList(BaseModel):
     items: list[TrainingResponse]
 
 
+class GateChecksBody(BaseModel):
+    """Quality-gate clauses stored on a promotion decision."""
+
+    wape_improved: bool
+    bias_within_limit: bool
+    coverage_within_limit: bool | None
+    no_critical_segment_regression: bool
+
+
+class SegmentRegressionBody(BaseModel):
+    """One category whose WAPE worsened past the gate."""
+
+    category_id: str
+    candidate_wape: float
+    reference_wape: float
+
+
+class PromotionBody(BaseModel):
+    """The quality-gate record for a model version."""
+
+    reference_id: str
+    thresholds: dict[str, float]
+    checks: GateChecksBody
+    reason: str | None
+    p90_coverage: float | None
+    regressed_categories: list[SegmentRegressionBody]
+
+
 class ModelResponse(BaseModel):
     """One model version."""
 
@@ -110,10 +161,13 @@ class ModelResponse(BaseModel):
     model_family: str
     version: str
     training_run_id: str
+    dataset_id: str
     dataset_version: str
     registry_arn: str
     status: ModelStatusName
     metrics: dict[str, object] | None
+    rejection_reason: str | None
+    promotion: PromotionBody | None
     approved_at: datetime | None
     created_at: datetime
 
@@ -151,12 +205,16 @@ class ForecastResponse(BaseModel):
     """One forecast run."""
 
     id: str
+    model_id: str
+    model_family: str
     model_version: str
+    dataset_id: str
     dataset_version: str
     horizon: int
     granularity: Granularity
     status: ForecastStatus
     output_uri: str
+    error_message: str | None
     created_at: datetime
 
 
@@ -177,10 +235,66 @@ class ForecastPointResponse(BaseModel):
     actual: float | None
 
 
+class SeriesSummary(BaseModel):
+    """Totals for one series, summed from stored points."""
+
+    series_id: str
+    point_count: int
+    p10_total: float | None
+    p50_total: float | None
+    p90_total: float | None
+
+
+class HistoryPoint(BaseModel):
+    """Observed demand before the forecast cutoff, summed across the filtered series."""
+
+    date: date
+    actual: float
+
+
+class DailyDemand(BaseModel):
+    """One forecast date, summed across the filtered series."""
+
+    date: date
+    p10: float | None
+    p50: float | None
+    p90: float | None
+    actual: float | None
+
+
 class ForecastSeries(BaseModel):
-    """Points produced by one forecast run."""
+    """Points produced by one forecast run, plus server-side totals for the same points."""
 
     items: list[ForecastPointResponse]
+    series: list[SeriesSummary]
+    history: list[HistoryPoint]
+    daily: list[DailyDemand]
+    cutoff: date | None
+    p10_total: float | None
+    p50_total: float | None
+    p90_total: float | None
+
+
+class CatalogEntry(BaseModel):
+    """One store or category the user can filter on."""
+
+    id: str
+    name: str
+
+
+class SkuEntry(BaseModel):
+    """One SKU and the category it belongs to."""
+
+    id: str
+    category_id: str
+
+
+class DatasetCatalog(BaseModel):
+    """Filter values read from a dataset's dimension tables."""
+
+    stores: list[CatalogEntry]
+    categories: list[CatalogEntry]
+    skus: list[SkuEntry]
 
 
 class ModelPerformance(BaseModel):

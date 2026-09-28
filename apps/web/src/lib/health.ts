@@ -6,6 +6,9 @@ export const healthResponseSchema = z.object({
   aws_enabled: z.boolean(),
   bedrock_enabled: z.boolean(),
   sagemaker_enabled: z.boolean(),
+  training_enabled: z.boolean(),
+  max_forecast_horizon_days: z.number().int().positive(),
+  max_training_jobs_per_day: z.number().int().nonnegative(),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;

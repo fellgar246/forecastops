@@ -19,6 +19,9 @@ def test_health_reports_local_profile_with_cloud_flags_off() -> None:
     assert body["aws_enabled"] is False
     assert body["bedrock_enabled"] is False
     assert body["sagemaker_enabled"] is False
+    assert body["training_enabled"] is True
+    assert body["max_forecast_horizon_days"] == 90
+    assert body["max_training_jobs_per_day"] == 2
 
 
 def test_aws_health_reports_each_cloud_integration_disabled() -> None:

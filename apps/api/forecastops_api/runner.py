@@ -1,15 +1,15 @@
 """In-process training and forecast jobs.
 
-Jobs call the local forecasting library and write artifacts on disk. They do
-not import a cloud SDK.
+Jobs call the local forecasting library and write artifacts through the store.
+They do not import a cloud SDK.
 """
 
 import json
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 import pyarrow as pa
 
+from forecastops_api.artifacts import ArtifactStore
 from forecastops_api.persistence import (
     ForecastPointRow,
     ForecastRunRow,
@@ -37,9 +37,9 @@ _DEFAULT_HORIZON = 7
 class LocalJobRunner:
     """Move training and forecast rows through their statuses."""
 
-    def __init__(self, repository: Repository, artifact_dir: Path) -> None:
+    def __init__(self, repository: Repository, artifacts: ArtifactStore) -> None:
         self._repository = repository
-        self._artifact_dir = artifact_dir
+        self._artifacts = artifacts
 
     def train(self, run: TrainingRunRow, frame: pa.Table) -> ModelVersionRow | None:
         """Fit, score, and register ``run``. Return the model, or none on failure."""
@@ -67,8 +67,7 @@ class LocalJobRunner:
             return None
 
         self._training_status(run, "REGISTERING")
-        artifact = self._write_training_artifact(run, report)
-        run.artifact_uri = str(artifact)
+        run.artifact_uri = self._write_training_artifact(run, report)
         run.metrics = report.to_dict()
         model = ModelVersionRow(
             id=_new_id(),
@@ -144,7 +143,7 @@ class LocalJobRunner:
             )
         ]
         self._repository.add_points(points)
-        forecast.output_uri = str(artifact)
+        forecast.output_uri = artifact
         forecast.status = "SUCCEEDED"
         self._repository.save()
 
@@ -212,28 +211,26 @@ class LocalJobRunner:
         self._repository.save()
         return None
 
-    def _write_training_artifact(self, run: TrainingRunRow, report: EvaluationReport) -> Path:
-        directory = self._artifact_dir / "training" / run.id
-        directory.mkdir(parents=True, exist_ok=True)
-        destination = directory / "evaluation.json"
-        destination.write_text(
-            json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+    def _write_training_artifact(self, run: TrainingRunRow, report: EvaluationReport) -> str:
+        document = json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n"
+        return self._artifacts.put(
+            "training",
+            f"{run.id}/evaluation.json",
+            document.encode("utf-8"),
         )
-        return directory
 
-    def _write_forecast_artifact(self, forecast: ForecastRunRow, predicted: ForecastFrame) -> Path:
-        directory = self._artifact_dir / "forecasts" / forecast.id
-        directory.mkdir(parents=True, exist_ok=True)
+    def _write_forecast_artifact(self, forecast: ForecastRunRow, predicted: ForecastFrame) -> str:
         payload = {
             "dates": [day.isoformat() for day in predicted.date],
             "p50": list(predicted.p50),
             "series_id": list(predicted.series_id),
         }
-        destination = directory / "forecast.json"
         document = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-        destination.write_text(document, encoding="utf-8")
-        return directory
+        return self._artifacts.put(
+            "forecasts",
+            f"{forecast.id}/forecast.json",
+            document.encode("utf-8"),
+        )
 
 
 def _baseline_may_wait(

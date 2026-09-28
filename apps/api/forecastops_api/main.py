@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from forecastops_api.artifacts import select_artifact_store
 from forecastops_api.errors import install_error_handlers
 from forecastops_api.health import router as health_router
 from forecastops_api.logging import configure_logging
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="ForecastOps API", version="0.1.0", lifespan=lifespan)
     application.state.settings = resolved
     application.state.artifact_dir = resolved.artifact_dir
+    application.state.artifact_store = select_artifact_store(resolved)
     engine = create_engine(resolved.database_url)
     application.state.engine = engine
     application.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)

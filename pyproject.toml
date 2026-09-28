@@ -56,7 +56,16 @@ packages = ["forecastops_api", "forecastops_contracts", "forecastops_ml"]
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["lightgbm", "lightgbm.*", "pyarrow", "pyarrow.*", "statsmodels", "statsmodels.*"]
+module = [
+  "boto3",
+  "boto3.*",
+  "lightgbm",
+  "lightgbm.*",
+  "pyarrow",
+  "pyarrow.*",
+  "statsmodels",
+  "statsmodels.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

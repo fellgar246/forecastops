@@ -12,6 +12,13 @@ function isMissing(value: number | null | undefined): value is null | undefined 
   return value == null || Number.isNaN(value);
 }
 
+export function formatCount(value: number | null | undefined): string {
+  if (isMissing(value)) {
+    return MISSING_MARK;
+  }
+  return numberFormat.format(Math.round(value));
+}
+
 export function formatUnits(value: number | null | undefined): string {
   if (isMissing(value)) {
     return MISSING_MARK;
@@ -108,6 +115,38 @@ export function formatDuration(totalSeconds: number | null | undefined): string 
     parts.push(`${rest}s`);
   }
   return parts.slice(0, 2).join(" ");
+}
+
+export function formatHorizon(horizon: number, granularity: "day" | "week"): string {
+  const unit = granularity === "week" ? "week" : "day";
+  return `${numberFormat.format(horizon)} ${horizon === 1 ? unit : `${unit}s`}`;
+}
+
+export function formatRelative(
+  value: Date | string | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (value == null || value === "") {
+    return MISSING_MARK;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return MISSING_MARK;
+  }
+  const minutes = Math.round((now.getTime() - date.getTime()) / 60000);
+  const elapsed = Math.abs(minutes);
+  if (elapsed < 1) {
+    return "just now";
+  }
+  if (elapsed < 60) {
+    return elapsed === 1 ? "1 minute ago" : `${elapsed} minutes ago`;
+  }
+  const hours = Math.round(elapsed / 60);
+  if (hours < 24) {
+    return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+  }
+  const days = Math.round(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
 }
 
 export function formatId(value: string | null | undefined): string {

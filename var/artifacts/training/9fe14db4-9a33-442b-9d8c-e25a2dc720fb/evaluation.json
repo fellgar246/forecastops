@@ -1,0 +1,253 @@
+{
+  "dataset_version": "1",
+  "fold_count": 3,
+  "horizon": 7,
+  "metrics": {
+    "by_category": [
+      {
+        "key": "beverages",
+        "metrics": {
+          "bias": 0.04521276595744681,
+          "mae": 2.3095238095238093,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 4.011887099014389,
+          "row_count": 84,
+          "smape": 0.29591790528286177,
+          "wape": 0.2579787234042553
+        }
+      },
+      {
+        "key": "snacks",
+        "metrics": {
+          "bias": -0.07450980392156863,
+          "mae": 2.4404761904761907,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 5.443432040629549,
+          "row_count": 84,
+          "smape": 0.3092370851666738,
+          "wape": 0.2679738562091503
+        }
+      }
+    ],
+    "by_demand_quartile": [
+      {
+        "key": "q1",
+        "metrics": {
+          "bias": -0.12873563218390804,
+          "mae": 3.0476190476190474,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 7.101307726649468,
+          "row_count": 42,
+          "smape": 0.33195505492695654,
+          "wape": 0.2942528735632184
+        }
+      },
+      {
+        "key": "q2",
+        "metrics": {
+          "bias": -0.0030303030303030303,
+          "mae": 1.8333333333333333,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 2.972092416687835,
+          "row_count": 42,
+          "smape": 0.28651911540639113,
+          "wape": 0.23333333333333334
+        }
+      },
+      {
+        "key": "q3",
+        "metrics": {
+          "bias": 0.0963855421686747,
+          "mae": 2.8095238095238093,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 4.980915960897534,
+          "row_count": 42,
+          "smape": 0.3923438590665481,
+          "wape": 0.35542168674698793
+        }
+      },
+      {
+        "key": "q4",
+        "metrics": {
+          "bias": 0.004761904761904762,
+          "mae": 1.8095238095238095,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 2.716790823923031,
+          "row_count": 42,
+          "smape": 0.1994919514991754,
+          "wape": 0.18095238095238095
+        }
+      }
+    ],
+    "by_horizon_step": [
+      {
+        "key": "1",
+        "metrics": {
+          "bias": 0.03680981595092025,
+          "mae": 2.0,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 2.8284271247461903,
+          "row_count": 24,
+          "smape": 0.35511699915724687,
+          "wape": 0.294478527607362
+        }
+      },
+      {
+        "key": "2",
+        "metrics": {
+          "bias": -0.016666666666666666,
+          "mae": 1.125,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 1.567907310185565,
+          "row_count": 24,
+          "smape": 0.14589768891239477,
+          "wape": 0.15
+        }
+      },
+      {
+        "key": "3",
+        "metrics": {
+          "bias": 0.04245283018867924,
+          "mae": 3.0416666666666665,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 5.820223363411408,
+          "row_count": 24,
+          "smape": 0.41326093664199953,
+          "wape": 0.3443396226415094
+        }
+      },
+      {
+        "key": "4",
+        "metrics": {
+          "bias": -0.05761316872427984,
+          "mae": 1.3333333333333333,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 2.449489742783178,
+          "row_count": 24,
+          "smape": 0.1792682141082554,
+          "wape": 0.13168724279835392
+        }
+      },
+      {
+        "key": "5",
+        "metrics": {
+          "bias": 0.05084745762711865,
+          "mae": 2.5,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 3.8188130791298667,
+          "row_count": 24,
+          "smape": 0.3767891029197508,
+          "wape": 0.2542372881355932
+        }
+      },
+      {
+        "key": "6",
+        "metrics": {
+          "bias": 0.021834061135371178,
+          "mae": 1.375,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 1.695582495781317,
+          "row_count": 24,
+          "smape": 0.14209353970189884,
+          "wape": 0.14410480349344978
+        }
+      },
+      {
+        "key": "7",
+        "metrics": {
+          "bias": -0.14960629921259844,
+          "mae": 5.25,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 9.604686356149273,
+          "row_count": 24,
+          "smape": 0.5056159851318284,
+          "wape": 0.49606299212598426
+        }
+      }
+    ],
+    "by_store": [
+      {
+        "key": "store-01",
+        "metrics": {
+          "bias": 0.02556390977443609,
+          "mae": 2.0833333333333335,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 3.7241170254232907,
+          "row_count": 84,
+          "smape": 0.3109939117210973,
+          "wape": 0.2631578947368421
+        }
+      },
+      {
+        "key": "store-02",
+        "metrics": {
+          "bias": -0.046948356807511735,
+          "mae": 2.6666666666666665,
+          "pinball_loss_p10": null,
+          "pinball_loss_p90": null,
+          "rmse": 5.644213218610974,
+          "row_count": 84,
+          "smape": 0.2941610787284383,
+          "wape": 0.26291079812206575
+        }
+      }
+    ],
+    "global": {
+      "bias": -0.015161502966381015,
+      "mae": 2.375,
+      "pinball_loss_p10": null,
+      "pinball_loss_p90": null,
+      "rmse": 4.781536911715232,
+      "row_count": 168,
+      "smape": 0.3025774952247678,
+      "wape": 0.26301911667765326
+    }
+  },
+  "model_family": "seasonal_naive",
+  "runtime_ms": 0,
+  "skipped_series": [],
+  "wape_by_horizon": [
+    {
+      "step": 1,
+      "wape": 0.294478527607362
+    },
+    {
+      "step": 2,
+      "wape": 0.15
+    },
+    {
+      "step": 3,
+      "wape": 0.3443396226415094
+    },
+    {
+      "step": 4,
+      "wape": 0.13168724279835392
+    },
+    {
+      "step": 5,
+      "wape": 0.2542372881355932
+    },
+    {
+      "step": 6,
+      "wape": 0.14410480349344978
+    },
+    {
+      "step": 7,
+      "wape": 0.49606299212598426
+    }
+  ]
+}

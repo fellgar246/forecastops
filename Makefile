@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data profile-data aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data train-deepar aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
 
 test:
 	uv run pytest
@@ -14,12 +14,16 @@ lint:
 
 OUT ?= data/synthetic
 PROFILE ?= default
+DATASET ?= data/synthetic
 
 seed-data:
 	uv run python scripts/seed/seed_data.py --output $(OUT) --profile $(PROFILE)
 
 profile-data:
 	uv run python scripts/profile/profile_data.py --dataset $(OUT)
+
+train-deepar:
+	uv run python scripts/train/train_deepar.py --dataset $(DATASET)
 
 aws-plan:
 	./scripts/aws/plan.sh

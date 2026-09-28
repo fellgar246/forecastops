@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://forecastops:forecastops@localhost:5432/forecastops"
     web_origin: str = "http://localhost:3000"
     artifact_dir: Path = Path("var/artifacts")
+    artifacts_bucket: str = ""
+    aws_region: str = "us-east-1"
 
 
 def load_settings() -> Settings:

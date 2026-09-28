@@ -4,10 +4,16 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from forecastops_api.artifacts import (
+    PRESIGNED_UPLOAD_SECONDS,
+    ArtifactStore,
+    InvalidArtifactPrefix,
+    PresigningStore,
+    upload_object_name,
+)
 from forecastops_api.errors import ApiError
 from forecastops_api.persistence import (
     DatasetRow,
-    ForecastPointRow,
     ForecastRunRow,
     ModelVersionRow,
     PromotionDecisionRow,
@@ -17,17 +23,32 @@ from forecastops_api.repositories import Repository
 from forecastops_api.runner import LocalJobRunner
 from forecastops_api.schemas import (
     ApproveRequest,
+    CatalogEntry,
     DataQualityItem,
+    DatasetCatalog,
     DatasetCreate,
     DatasetResponse,
+    DatasetUploadResponse,
     DatasetValidate,
     ForecastCreate,
-    ForecastPointResponse,
     ForecastResponse,
+    ForecastSeries,
+    GateChecksBody,
     ModelResponse,
+    PresignedUploadResponse,
+    PromotionBody,
     RejectRequest,
+    SegmentRegressionBody,
+    SkuEntry,
     TrainingCreate,
     TrainingResponse,
+)
+from forecastops_api.series import (
+    Observation,
+    SeriesPoint,
+    assemble_series,
+    empty_series,
+    point_matches,
 )
 from forecastops_api.settings import Settings
 from forecastops_contracts import SCHEMA_VERSION
@@ -41,10 +62,16 @@ _CLOUD_FAMILIES = {"deepar"}
 class ForecastService:
     """Register data, train local models, and serve stored forecasts."""
 
-    def __init__(self, repository: Repository, settings: Settings, artifact_dir: Path) -> None:
+    def __init__(
+        self,
+        repository: Repository,
+        settings: Settings,
+        artifacts: ArtifactStore,
+    ) -> None:
         self._repository = repository
         self._settings = settings
-        self._runner = LocalJobRunner(repository, artifact_dir)
+        self._artifacts = artifacts
+        self._runner = LocalJobRunner(repository, artifacts)
 
     def register_dataset(self, body: DatasetCreate) -> DatasetRow:
         """Record a dataset directory and its observation window."""
@@ -73,6 +100,42 @@ class ForecastService:
         )
         self._repository.add(row)
         return row
+
+    def store_uploaded_dataset(self, filename: str, body: bytes) -> DatasetUploadResponse:
+        """Store dataset bytes. Local mode writes them through the artifact store."""
+
+        if self._settings.aws_enabled:
+            raise ApiError(
+                409,
+                "presigned_upload_required",
+                "Upload the dataset with the pre-signed URL when AWS is enabled.",
+            )
+        try:
+            name = upload_object_name(filename)
+            uri = self._artifacts.put("raw", name, body)
+        except InvalidArtifactPrefix as exc:
+            raise ApiError(422, "invalid_artifact", str(exc)) from exc
+        return DatasetUploadResponse(uri=uri, name=name)
+
+    def issue_presigned_upload(self, filename: str) -> PresignedUploadResponse:
+        """Issue a pre-signed upload URL when the remote store is selected."""
+
+        if not self._settings.aws_enabled or not isinstance(self._artifacts, PresigningStore):
+            raise ApiError(
+                409,
+                "aws_disabled",
+                "Pre-signed dataset uploads are available only when AWS is enabled.",
+            )
+        try:
+            name = upload_object_name(filename)
+            url, uri = self._artifacts.presign_put(
+                "raw",
+                name,
+                expires_in=PRESIGNED_UPLOAD_SECONDS,
+            )
+        except InvalidArtifactPrefix as exc:
+            raise ApiError(422, "invalid_artifact", str(exc)) from exc
+        return PresignedUploadResponse(url=url, uri=uri, expires_in=PRESIGNED_UPLOAD_SECONDS)
 
     def list_datasets(self) -> list[DatasetRow]:
         """Return every registered dataset."""
@@ -263,11 +326,141 @@ class ForecastService:
             raise ApiError(404, "not_found", "Forecast was not found.")
         return forecast
 
-    def forecast_series(self, forecast_id: str) -> list[ForecastPointRow]:
-        """Return stored points for one forecast."""
+    def forecast_series(
+        self,
+        forecast_id: str,
+        *,
+        category: str | None = None,
+        sku: str | None = None,
+        store: str | None = None,
+        horizon: int | None = None,
+    ) -> ForecastSeries:
+        """Return stored points for one forecast, limited to the requested filters."""
 
-        self.get_forecast(forecast_id)
-        return self._repository.list_points(forecast_id)
+        forecast = self.get_forecast(forecast_id)
+        if horizon is not None and forecast.horizon != horizon:
+            return empty_series()
+        points = self._repository.list_points(forecast_id)
+        sku_categories = self._sku_categories(forecast.dataset_id) if category else {}
+        selected = [
+            point
+            for point in points
+            if point_matches(
+                point.series_id,
+                store=store,
+                sku=sku,
+                category=category,
+                sku_categories=sku_categories,
+            )
+        ]
+        views = [
+            SeriesPoint(
+                series_id=point.series_id,
+                day=point.date,
+                p10=point.p10,
+                p50=point.p50,
+                p90=point.p90,
+                actual=point.actual,
+            )
+            for point in selected
+        ]
+        observations = self._observations(forecast.dataset_id) if views else []
+        horizon_days = forecast.horizon * 7 if forecast.granularity == "week" else forecast.horizon
+        return assemble_series(
+            views,
+            observations,
+            horizon_days=horizon_days,
+            category=category,
+        )
+
+    def catalog(self, dataset_id: str) -> DatasetCatalog:
+        """Return stores, categories, and SKUs from a dataset directory."""
+
+        dataset = _require_dataset(self._repository, dataset_id)
+        try:
+            _frame, dimensions = load_dataset(Path(dataset.uri))
+        except ValueError as exc:
+            raise ApiError(422, "invalid_dataset", str(exc)) from exc
+        stores = [
+            CatalogEntry(id=str(store_id), name=str(store_id))
+            for store_id in dimensions.stores.column("store_id").to_pylist()
+        ]
+        categories = [
+            CatalogEntry(id=str(category_id), name=str(name))
+            for category_id, name in zip(
+                dimensions.categories.column("category_id").to_pylist(),
+                dimensions.categories.column("category_name").to_pylist(),
+                strict=True,
+            )
+        ]
+        skus = [
+            SkuEntry(id=str(sku_id), category_id=str(category_id))
+            for sku_id, category_id in zip(
+                dimensions.skus.column("sku_id").to_pylist(),
+                dimensions.skus.column("category_id").to_pylist(),
+                strict=True,
+            )
+        ]
+        return DatasetCatalog(
+            stores=sorted(stores, key=lambda item: item.id),
+            categories=sorted(categories, key=lambda item: item.id),
+            skus=sorted(skus, key=lambda item: item.id),
+        )
+
+    def present_model(self, row: ModelVersionRow) -> ModelResponse:
+        """Map a model row, including its quality-gate record."""
+
+        decisions = self._repository.list_decisions(row.id)
+        promotion = _promotion_body(decisions)
+        return model_response(row, promotion)
+
+    def present_forecast(self, row: ForecastRunRow) -> ForecastResponse:
+        """Map a forecast row together with its model identity."""
+
+        model = self.get_model(row.model_version_id)
+        return forecast_response(row, model)
+
+    def _sku_categories(self, dataset_id: str) -> dict[str, str]:
+        dataset = _require_dataset(self._repository, dataset_id)
+        try:
+            _frame, dimensions = load_dataset(Path(dataset.uri))
+        except ValueError as exc:
+            raise ApiError(422, "invalid_dataset", str(exc)) from exc
+        return {
+            str(sku_id): str(category_id)
+            for sku_id, category_id in zip(
+                dimensions.skus.column("sku_id").to_pylist(),
+                dimensions.skus.column("category_id").to_pylist(),
+                strict=True,
+            )
+        }
+
+    def _observations(self, dataset_id: str) -> list[Observation]:
+        dataset = _require_dataset(self._repository, dataset_id)
+        try:
+            frame, _dimensions = load_dataset(Path(dataset.uri))
+        except ValueError:
+            return []
+        dates = frame.column("date").to_pylist()
+        stores = frame.column("store_id").to_pylist()
+        skus = frame.column("sku_id").to_pylist()
+        categories = frame.column("category_id").to_pylist()
+        units = frame.column("units_sold").to_pylist()
+        rows: list[Observation] = []
+        for day, store_id, sku_id, category_id, sold in zip(
+            dates, stores, skus, categories, units, strict=True
+        ):
+            if not isinstance(day, date) or sold is None:
+                continue
+            rows.append(
+                Observation(
+                    day=day,
+                    series_id=f"{store_id}|{sku_id}",
+                    category_id=str(category_id),
+                    units=float(sold),
+                )
+            )
+        return rows
 
     def model_performance(self) -> list[ModelVersionRow]:
         """Return models and the metrics used for promotion."""
@@ -362,6 +555,7 @@ def training_response(row: TrainingRunRow) -> TrainingResponse:
 
     return TrainingResponse(
         id=row.id,
+        dataset_id=row.dataset_id,
         dataset_version=row.dataset_version,
         model_family=row.model_family,
         configuration=row.configuration,
@@ -370,13 +564,14 @@ def training_response(row: TrainingRunRow) -> TrainingResponse:
         finished_at=row.finished_at,
         artifact_uri=row.artifact_uri,
         metrics=row.metrics,
+        error_message=row.error_message,
         git_sha=row.git_sha,
         pipeline_execution_arn=row.pipeline_execution_arn,
         created_at=row.created_at,
     )
 
 
-def model_response(row: ModelVersionRow) -> ModelResponse:
+def model_response(row: ModelVersionRow, promotion: PromotionBody | None = None) -> ModelResponse:
     """Map a model row to the API schema."""
 
     return ModelResponse(
@@ -384,40 +579,58 @@ def model_response(row: ModelVersionRow) -> ModelResponse:
         model_family=row.model_family,
         version=row.version,
         training_run_id=row.training_run_id,
+        dataset_id=row.dataset_id,
         dataset_version=row.dataset_version,
         registry_arn=row.registry_arn,
         status=row.status,  # type: ignore[arg-type]
         metrics=row.metrics,
+        rejection_reason=row.rejection_reason,
+        promotion=promotion,
         approved_at=row.approved_at,
         created_at=row.created_at,
     )
 
 
-def forecast_response(row: ForecastRunRow, model_version: str) -> ForecastResponse:
+def forecast_response(row: ForecastRunRow, model: ModelVersionRow) -> ForecastResponse:
     """Map a forecast row to the API schema."""
 
     return ForecastResponse(
         id=row.id,
-        model_version=model_version,
+        model_id=model.id,
+        model_family=model.model_family,
+        model_version=model.version,
+        dataset_id=row.dataset_id,
         dataset_version=row.dataset_version,
         horizon=row.horizon,
         granularity=row.granularity,  # type: ignore[arg-type]
         status=row.status,  # type: ignore[arg-type]
         output_uri=row.output_uri,
+        error_message=row.error_message,
         created_at=row.created_at,
     )
 
 
-def point_response(row: ForecastPointRow) -> ForecastPointResponse:
-    """Map a forecast point to the API schema."""
+def _promotion_body(decisions: list[PromotionDecisionRow]) -> PromotionBody | None:
+    """Return the latest decision that stored quality-gate checks."""
 
-    return ForecastPointResponse(
-        series_id=row.series_id,
-        date=row.date,
-        p10=row.p10,
-        p50=row.p50,
-        p90=row.p90,
-        actual=row.actual,
+    gated = [row for row in decisions if row.checks]
+    if not gated:
+        return None
+    row = gated[-1]
+    thresholds = {
+        str(key): float(value)
+        for key, value in row.thresholds.items()
+        if isinstance(value, int | float) and not isinstance(value, bool)
+    }
+    return PromotionBody(
+        reference_id=row.reference_id,
+        thresholds=thresholds,
+        checks=GateChecksBody.model_validate(row.checks),
+        reason=row.reason,
+        p90_coverage=row.p90_coverage,
+        regressed_categories=[
+            SegmentRegressionBody.model_validate(item) for item in row.regressed_categories
+        ],
     )
 
 
