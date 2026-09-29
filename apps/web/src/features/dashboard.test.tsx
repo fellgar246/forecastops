@@ -52,6 +52,7 @@ function pendingModel(status = "PENDING_APPROVAL") {
     dataset_id: "dataset-1",
     dataset_version: "1",
     registry_arn: "",
+    registry_status: "",
     status,
     metrics,
     rejection_reason: null,

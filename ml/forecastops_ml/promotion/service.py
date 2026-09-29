@@ -2,11 +2,15 @@
 
 ``gate``, ``approve``, and ``reject`` do not depend on HTTP. A later API
 calls them. Training success registers a model as ``TRAINED`` and does not
-approve it.
+approve it. When a model registry is attached, the gate records the candidate
+and a person's decision updates that registry in the same operation.
 """
+
+from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from forecastops_ml.evaluation.backtest import EvaluationReport
 from forecastops_ml.promotion.gate import (
@@ -14,8 +18,12 @@ from forecastops_ml.promotion.gate import (
     PromotionDecision,
     gate,
 )
-from forecastops_ml.promotion.models import ModelStatus, ModelVersion
+from forecastops_ml.promotion.models import ModelStatus, ModelVersion, RegistryStatus
 from forecastops_ml.promotion.thresholds import PromotionThresholds
+from forecastops_ml.registry.status import registry_status_for
+
+if TYPE_CHECKING:
+    from forecastops_ml.registry.adapter import ModelRegistry, RegistryEntry
 
 Clock = Callable[[], datetime]
 
@@ -27,8 +35,14 @@ class PromotionError(ValueError):
 class PromotionService:
     """Store model versions and the decisions that change their status."""
 
-    def __init__(self, *, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Clock | None = None,
+        registry: ModelRegistry | None = None,
+    ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._registry = registry
         self._models: dict[str, ModelVersion] = {}
         self._reports: dict[str, EvaluationReport] = {}
         self._decisions: list[PromotionDecision] = []
@@ -123,12 +137,26 @@ class PromotionService:
         )
         metrics = dict(model.metrics)
         metrics["p90_coverage"] = decision.p90_coverage
-        self._models[candidate_id] = _replace(
+        updated = _replace(
             model,
             status=decision.status,
             metrics=metrics,
             rejection_reason=decision.reason,
         )
+        registry = self._registry
+        if registry is not None:
+            updated = _with_entry(
+                updated,
+                _call_registry(
+                    lambda: registry.register(
+                        model_id=updated.id,
+                        model_family=updated.model_family,
+                        version=updated.version,
+                        status=registry_status_for(decision.status),
+                    )
+                ),
+            )
+        self._models[candidate_id] = updated
         self._decisions.append(decision)
         return decision
 
@@ -139,12 +167,15 @@ class PromotionService:
         model = self._require(model_id)
         if model.status is not ModelStatus.PENDING_APPROVAL:
             raise PromotionError(f"Model {model_id} cannot be approved from {model.status.value}.")
+        entry = self._human_decision(model, actor, approve=True)
         updated = _replace(
             model,
             status=ModelStatus.APPROVED,
             approved_at=self._now(),
             approved_by=actor,
         )
+        if entry is not None:
+            updated = _with_entry(updated, entry)
         self._models[model_id] = updated
         return updated
 
@@ -161,12 +192,15 @@ class PromotionService:
         model = self._require(model_id)
         if model.status is not ModelStatus.PENDING_APPROVAL:
             raise PromotionError(f"Model {model_id} cannot be rejected from {model.status.value}.")
+        entry = self._human_decision(model, actor, approve=False)
         updated = _replace(
             model,
             status=ModelStatus.REJECTED,
             rejected_by=actor,
             rejection_reason=HUMAN_REJECTION,
         )
+        if entry is not None:
+            updated = _with_entry(updated, entry)
         self._models[model_id] = updated
         return updated
 
@@ -210,6 +244,24 @@ class PromotionService:
         except KeyError as exc:
             raise PromotionError(f"Model {model_id} is not registered.") from exc
 
+    def _human_decision(
+        self,
+        model: ModelVersion,
+        actor_id: str,
+        *,
+        approve: bool,
+    ) -> RegistryEntry | None:
+        """Update the registry when one is attached. Leave the row unchanged otherwise."""
+
+        registry = self._registry
+        if registry is None:
+            return None
+        if model.registry_arn == "":
+            raise PromotionError("A cloud decision requires a registered model.")
+        if approve:
+            return _call_registry(lambda: registry.approve(model.registry_arn, actor_id=actor_id))
+        return _call_registry(lambda: registry.reject(model.registry_arn, actor_id=actor_id))
+
     def _now(self) -> datetime:
         current = self._clock()
         if current.tzinfo is None:
@@ -238,6 +290,7 @@ def _replace(model: ModelVersion, **changes: object) -> ModelVersion:
         "approved_by": model.approved_by,
         "rejected_by": model.rejected_by,
         "rejection_reason": model.rejection_reason,
+        "registry_status": model.registry_status,
     }
     values.update(changes)
     return ModelVersion(
@@ -254,6 +307,7 @@ def _replace(model: ModelVersion, **changes: object) -> ModelVersion:
         approved_by=_optional_str(values["approved_by"]),
         rejected_by=_optional_str(values["rejected_by"]),
         rejection_reason=_optional_str(values["rejection_reason"]),
+        registry_status=_registry_status(values["registry_status"]),
     )
 
 
@@ -279,6 +333,32 @@ def _optional_datetime(value: object) -> datetime | None:
     if value is None:
         return None
     return _datetime(value)
+
+
+def _with_entry(model: ModelVersion, entry: RegistryEntry) -> ModelVersion:
+    return _replace(
+        model,
+        registry_arn=entry.arn,
+        version=entry.version,
+        registry_status=entry.status,
+    )
+
+
+def _call_registry(operation: Callable[[], RegistryEntry]) -> RegistryEntry:
+    from forecastops_ml.registry.adapter import RegistryError
+
+    try:
+        return operation()
+    except RegistryError as exc:
+        raise PromotionError(str(exc)) from exc
+
+
+def _registry_status(value: object) -> RegistryStatus | None:
+    if value is None:
+        return None
+    if not isinstance(value, RegistryStatus):
+        raise PromotionError("Registry status must be a RegistryStatus value.")
+    return value
 
 
 def _optional_str(value: object) -> str | None:

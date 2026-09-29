@@ -176,6 +176,7 @@ export const modelSchema = z.object({
   dataset_id: z.string(),
   dataset_version: z.string(),
   registry_arn: z.string(),
+  registry_status: z.string(),
   status: modelStatusSchema,
   metrics: modelMetricsSchema,
   rejection_reason: z.string().nullable(),

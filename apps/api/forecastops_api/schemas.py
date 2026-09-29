@@ -164,6 +164,7 @@ class ModelResponse(BaseModel):
     dataset_id: str
     dataset_version: str
     registry_arn: str
+    registry_status: str
     status: ModelStatusName
     metrics: dict[str, object] | None
     rejection_reason: str | None
@@ -193,12 +194,16 @@ class RejectRequest(BaseModel):
 
 
 class ForecastCreate(BaseModel):
-    """Request a batch forecast from an approved model."""
+    """Request a batch forecast from an approved model.
+
+    ``idempotency_key`` returns the original run when the client repeats it.
+    """
 
     model_id: str
     horizon: int = Field(gt=0)
     granularity: Granularity = "day"
     dataset_id: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class ForecastResponse(BaseModel):

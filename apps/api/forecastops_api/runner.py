@@ -1,18 +1,16 @@
-"""In-process training and forecast jobs.
+"""In-process training jobs.
 
 Jobs call the local forecasting library and write artifacts through the store.
-They do not import a cloud SDK.
+They do not import a cloud SDK. Forecast runs are executed by the forecast worker.
 """
 
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime
 
 import pyarrow as pa
 
 from forecastops_api.artifacts import ArtifactStore
 from forecastops_api.persistence import (
-    ForecastPointRow,
-    ForecastRunRow,
     ModelVersionRow,
     PromotionDecisionRow,
     TrainingRunRow,
@@ -22,7 +20,6 @@ from forecastops_ml.baselines.catalog import local_catalog
 from forecastops_ml.evaluation.backtest import (
     Backtester,
     EvaluationReport,
-    ForecastFrame,
     UnscoredModelError,
 )
 from forecastops_ml.promotion.gate import PromotionDecision, gate
@@ -77,6 +74,7 @@ class LocalJobRunner:
             dataset_id=run.dataset_id,
             dataset_version=run.dataset_version,
             registry_arn="",
+            registry_status="",
             status="TRAINED",
             metrics=report.global_metrics.to_dict(),
             approved_at=None,
@@ -111,41 +109,6 @@ class LocalJobRunner:
         self._repository.save()
         self._training_status(run, "COMPLETED", finished=True)
         return model
-
-    def forecast(self, forecast: ForecastRunRow, frame: pa.Table, family: str) -> None:
-        """Fit ``family`` on ``frame`` and store the next horizon as points."""
-
-        forecast.status = "RUNNING"
-        self._repository.save()
-        try:
-            forecaster = local_catalog().get(family)
-            forecaster.fit(frame, None)
-            future = _future_frame(frame, forecast.horizon, forecast.granularity)
-            predicted = forecaster.predict(forecast.horizon, future)
-        except (UnscoredModelError, ValueError) as exc:
-            forecast.status = "FAILED"
-            forecast.error_message = str(exc)
-            self._repository.save()
-            return
-        artifact = self._write_forecast_artifact(forecast, predicted)
-        points = [
-            ForecastPointRow(
-                forecast_run_id=forecast.id,
-                series_id=series_id,
-                date=day,
-                p10=None if predicted.p10 is None else predicted.p10[index],
-                p50=predicted.p50[index],
-                p90=None if predicted.p90 is None else predicted.p90[index],
-                actual=None,
-            )
-            for index, (series_id, day) in enumerate(
-                zip(predicted.series_id, predicted.date, strict=True)
-            )
-        ]
-        self._repository.add_points(points)
-        forecast.output_uri = artifact
-        forecast.status = "SUCCEEDED"
-        self._repository.save()
 
     def _decide(
         self,
@@ -219,19 +182,6 @@ class LocalJobRunner:
             document.encode("utf-8"),
         )
 
-    def _write_forecast_artifact(self, forecast: ForecastRunRow, predicted: ForecastFrame) -> str:
-        payload = {
-            "dates": [day.isoformat() for day in predicted.date],
-            "p50": list(predicted.p50),
-            "series_id": list(predicted.series_id),
-        }
-        document = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-        return self._artifacts.put(
-            "forecasts",
-            f"{forecast.id}/forecast.json",
-            document.encode("utf-8"),
-        )
-
 
 def _baseline_may_wait(
     family: str,
@@ -274,32 +224,6 @@ def _production_report(
         folds,
         horizon,
         dataset_version=production.dataset_version,
-    )
-
-
-def _future_frame(frame: pa.Table, horizon: int, granularity: str) -> pa.Table:
-    dates = [value for value in frame.column("date").to_pylist() if isinstance(value, date)]
-    if not dates:
-        raise ValueError("The dataset has no observation dates to forecast from.")
-    origin = max(dates)
-    step = timedelta(weeks=1) if granularity == "week" else timedelta(days=1)
-    stores = frame.column("store_id").to_pylist()
-    skus = frame.column("sku_id").to_pylist()
-    series = sorted({(str(store), str(sku)) for store, sku in zip(stores, skus, strict=True)})
-    future_stores: list[str] = []
-    future_skus: list[str] = []
-    future_dates: list[date] = []
-    for store_id, sku_id in series:
-        for offset in range(1, horizon + 1):
-            future_stores.append(store_id)
-            future_skus.append(sku_id)
-            future_dates.append(origin + step * offset)
-    return pa.table(
-        {
-            "store_id": pa.array(future_stores, type=pa.string()),
-            "sku_id": pa.array(future_skus, type=pa.string()),
-            "date": pa.array(future_dates, type=pa.date32()),
-        }
     )
 
 

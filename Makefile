@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data profile-data train-deepar aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data train-deepar start-pipeline aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
 
 test:
 	uv run pytest
@@ -15,6 +15,9 @@ lint:
 OUT ?= data/synthetic
 PROFILE ?= default
 DATASET ?= data/synthetic
+DATASET_VERSION ?=
+GIT_SHA ?=
+CONFIG ?=
 
 seed-data:
 	uv run python scripts/seed/seed_data.py --output $(OUT) --profile $(PROFILE)
@@ -24,6 +27,9 @@ profile-data:
 
 train-deepar:
 	uv run python scripts/train/train_deepar.py --dataset $(DATASET)
+
+start-pipeline:
+	uv run python scripts/train/start_pipeline.py --dataset-version "$(DATASET_VERSION)" --git-sha "$(GIT_SHA)" --config "$(CONFIG)"
 
 aws-plan:
 	./scripts/aws/plan.sh

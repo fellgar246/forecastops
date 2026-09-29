@@ -39,6 +39,7 @@ from forecastops_api.services import (
     training_response,
 )
 from forecastops_api.settings import Settings
+from forecastops_ml.registry import ModelRegistry
 
 router = APIRouter()
 
@@ -68,7 +69,15 @@ def get_service(request: Request, session: SessionDep) -> ForecastService:
 
     settings: Settings = request.app.state.settings
     artifacts: ArtifactStore = request.app.state.artifact_store
-    return ForecastService(Repository(session), settings, artifacts)
+    registry: ModelRegistry | None = request.app.state.model_registry
+    return ForecastService(
+        Repository(session),
+        settings,
+        artifacts,
+        registry,
+        batch=getattr(request.app.state, "batch_inference", None),
+        predictor=getattr(request.app.state, "forecast_predictor", None),
+    )
 
 
 ServiceDep = Annotated[ForecastService, Depends(get_service)]
@@ -202,10 +211,12 @@ def reject_model(
 def create_forecast(
     body: ForecastCreate,
     service: ServiceDep,
+    request: Request,
 ) -> AcceptedJob:
-    """Start a forecast. Poll ``GET /forecasts/{id}`` for status."""
+    """Queue a forecast. Poll ``GET /forecasts/{id}`` for status."""
 
-    forecast = service.start_forecast(body)
+    execute = bool(getattr(request.app.state, "execute_forecasts_inline", True))
+    forecast = service.start_forecast(body, execute=execute)
     return AcceptedJob(job_id=forecast.id)
 
 

@@ -9,5 +9,6 @@ __all__ = [
     "inference",
     "pipelines",
     "promotion",
+    "registry",
     "training",
 ]

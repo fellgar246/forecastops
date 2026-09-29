@@ -122,6 +122,34 @@ Channel files are written under `training/{job}/`. Model output is `models/{job}
 
 A forecast point is kept when `p10`, `p50`, and `p90` are finite and `p10 <= p50 <= p90`. Local tests use `FakeDeepARRunner`, which returns a fixture forecast with those quantiles and does not call a training account.
 
+## Batch inference
+
+A forecast run is `QUEUED`, then `RUNNING`, then `SUCCEEDED` or `FAILED`. The worker writes `forecasts/{id}/forecast.json` and loads those points into metadata. P10 and P90 are stored when the model emits them. A point forecast leaves them null and keeps the value in P50.
+
+Local mode runs that same sequence in process. Catalog families are fit on the dataset and scored for the requested horizon. `deepar` without a cloud job uses a fake quantile model: P50 is the series' latest `units_sold`, P10 is 80 percent of that value, and P90 is 120 percent. The same series and horizon produce the same points.
+
+Cloud mode, when `SAGEMAKER_ENABLED` is true and execution is AWS, submits one SageMaker batch transform for `deepar`. The output prefix is `forecasts/{id}/`. The instance type is `ml.c5.xlarge`. The adapter does not create a real-time or serverless endpoint. `ONLINE_INFERENCE` stays false, and a process with that flag set is refused before any client call. Tests use a fake transform client.
+
+`MAX_BATCH_INFERENCE_JOBS_PER_DAY` limits how many forecast runs can be requested in a UTC day. The next request receives HTTP 429. `MAX_FORECAST_HORIZON_DAYS` limits the horizon. A client may send `idempotency_key`. Repeating that key returns the original run and does not start a second job. A failed run stores an English message. The message does not include dataset rows.
+
+## Training pipeline
+
+One manual command runs Validate, Process, Train, Evaluate, Quality Gate, and Register. Register runs only when the quality gate leaves the candidate pending approval. A rejected candidate is not registered, and the gate does not approve a model by itself.
+
+```bash
+make start-pipeline DATASET_VERSION=2026-09-21 GIT_SHA=$(git rev-parse --short HEAD) CONFIG=config.json
+```
+
+`config.json` is a JSON object. Set `grain`, `prediction_length`, `store_cardinality`, `category_cardinality`, and `series_count` there when the dataset is not the demo default (week, horizon 2, cardinalities 1, and 32 series). The command merges that file with the training limits: one `ml.c5.xlarge`, at most 45 minutes, fixed DeepAR hyperparameters, and no hyperparameter search. `make start-pipeline` starts one execution when `SAGEMAKER_ENABLED`, `TRAINING_ENABLED`, and `AWS_ML_ENABLED` are all true, `ALLOW_GPU_TRAINING` is false, and the runtime and daily job values stay within those ceilings. A closed flag prints an English reason and the process stops before the pipeline API. Set those flags in the environment for the run you intend to start. CI does not run this command. A pull request or a push does not start an execution.
+
+Validate checks the dataset. Process writes the DeepAR channels. Both read the dataset directory mounted for that step. Train uses the same CPU job settings as the manual DeepAR job. Evaluate scores the model with rolling-origin folds and the shared metrics (at least 3 folds). The quality gate compares that score with the reference. Register records the model as `PendingManualApproval` only when the gate is waiting for a person. Evaluate and the quality gate do not run from the step command on their own; they run once training has produced a model and an evaluation report.
+
+The bucket is `ARTIFACTS_BUCKET`. The pipeline role is `PIPELINE_ROLE_ARN`. The training step uses `DEEPAR_ROLE_ARN`. The region is `us-east-1`.
+
+A finished execution stores the git SHA, dataset version, resolved configuration, metric document, and artifact locations on the training run. Those locations are the quality report, channel prefix, model prefix, and metrics file for that dataset version.
+
+`enable_schedules` stays false. No rule starts this pipeline on a timer.
+
 ## Promotion
 
 A finished training job is registered as `TRAINED`. Recording its evaluation moves it to `EVALUATED`. Neither step sets `APPROVED`.
@@ -132,6 +160,10 @@ When the candidate report has a P90 pinball loss, pass empirical P90 coverage: t
 
 A passing gate sets `PENDING_APPROVAL` and records no rejection reason. A failing gate sets `REJECTED` with reason `quality_gate` and does not ask for an actor. Segment findings name each regressed category. The decision stores the candidate id, reference id, threshold snapshot, boolean checks, status, reason, and timestamp.
 
-`approve` moves `PENDING_APPROVAL` to `APPROVED` and requires an actor id. `reject` moves `PENDING_APPROVAL` to `REJECTED` with that actor id and reason `human`. `promote` moves `APPROVED` to `PRODUCTION` with an actor id and returns the previous production model of the same family to `APPROVED`. No other status enters production.
+`approve` moves `PENDING_APPROVAL` to `APPROVED` and requires an actor id. `reject` moves `PENDING_APPROVAL` to `REJECTED` with that actor id and reason `human`. `promote` moves `APPROVED` to `PRODUCTION` with an actor id and returns the previous production model of the same family to `APPROVED`. No other status enters production. Approval does not promote a model; production stays a separate human step.
+
+When a model registry is enabled, the gate records the candidate there. A model waiting for a person is `PendingManualApproval`. A candidate the gate rejects is `Rejected`, so that outcome stays visible. `approve` sets the internal status to `APPROVED` and the registry status to `Approved` in the same operation, and stores the registry ARN, the registry version, and the actor id on the model version. `reject` does the same for `Rejected`. With no registry, `approve` and `reject` update only the internal row. `promote` leaves the registry status at `Approved`, which already covers a model in `PRODUCTION`.
+
+A cloud forecast loads a model only when the registry status is `Approved` and the internal status is `APPROVED` or `PRODUCTION`. Pending and rejected registry versions are refused. Local forecasts keep using the internal status alone.
 
 When no production evaluation exists, `reference_report` scores seasonal naive on the same frame and dataset version. Daily frames use a 7-day lag. Weekly frames use a 52-week lag. A production report is returned unchanged when one is supplied.

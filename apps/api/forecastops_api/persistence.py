@@ -63,6 +63,7 @@ class ModelVersionRow(Base):
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
     dataset_version: Mapped[str] = mapped_column(String(64))
     registry_arn: Mapped[str] = mapped_column(Text, default="")
+    registry_status: Mapped[str] = mapped_column(String(32), default="", server_default="")
     status: Mapped[str] = mapped_column(String(32))
     metrics: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -104,6 +105,7 @@ class ForecastRunRow(Base):
     status: Mapped[str] = mapped_column(String(32))
     output_uri: Mapped[str] = mapped_column(Text, default="")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

@@ -35,3 +35,5 @@ def test_initial_migration_applies(tmp_path, monkeypatch) -> None:
     tables = set(inspect(engine).get_table_names())
     assert "datasets" in tables
     assert "forecast_points" in tables
+    columns = {column["name"] for column in inspect(engine).get_columns("forecast_runs")}
+    assert "idempotency_key" in columns

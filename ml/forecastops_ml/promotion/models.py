@@ -24,14 +24,28 @@ class ModelStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class RegistryStatus(StrEnum):
+    """Approval state stored in the cloud model registry.
+
+    ``APPROVED`` and ``PRODUCTION`` both appear here as ``Approved``. A model
+    that is still training or only evaluated is not recorded yet.
+    """
+
+    PENDING_MANUAL_APPROVAL = "PendingManualApproval"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+
+
 @dataclass(frozen=True)
 class ModelVersion:
     """One registered model and the metrics used to decide promotion.
 
     ``registry_arn`` is empty until a cloud registry records the model.
-    ``approved_at`` is set only after a person approves it. ``metrics`` holds
-    the evaluation numbers copied onto the version. A finished training job
-    starts here as ``TRAINED`` with no approval timestamp.
+    ``registry_status`` is set at the same time. ``approved_at`` is set only
+    after a person approves it. ``approved_by`` and ``rejected_by`` store the
+    actor id of that decision. ``metrics`` holds the evaluation numbers copied
+    onto the version. A finished training job starts here as ``TRAINED`` with
+    no approval timestamp.
     """
 
     id: str
@@ -47,6 +61,7 @@ class ModelVersion:
     approved_by: str | None = None
     rejected_by: str | None = None
     rejection_reason: str | None = None
+    registry_status: RegistryStatus | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.id, "Model id")
@@ -57,6 +72,10 @@ class ModelVersion:
             raise ValueError("Model status must be a ModelStatus value.")
         if not isinstance(self.registry_arn, str):
             raise ValueError("registry_arn must be a string.")
+        if self.registry_status is not None and not isinstance(
+            self.registry_status, RegistryStatus
+        ):
+            raise ValueError("registry_status must be a RegistryStatus value.")
         if self.dataset_version is not None:
             _require_text(self.dataset_version, "Dataset version")
         if self.approved_at is not None and self.approved_at.tzinfo is None:
@@ -77,6 +96,7 @@ class ModelVersion:
             "metrics": dict(self.metrics),
             "model_family": self.model_family,
             "registry_arn": self.registry_arn,
+            "registry_status": None if self.registry_status is None else self.registry_status.value,
             "rejected_by": self.rejected_by,
             "rejection_reason": self.rejection_reason,
             "status": self.status.value,

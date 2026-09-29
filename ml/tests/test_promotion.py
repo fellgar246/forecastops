@@ -15,9 +15,11 @@ from forecastops_ml.promotion import (
     ModelStatus,
     PromotionError,
     PromotionService,
+    RegistryStatus,
     empirical_p90_coverage,
     reference_report,
 )
+from forecastops_ml.registry import MemoryModelRegistry
 
 DATASET = "retail-demand-v1"
 NOW = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
@@ -194,6 +196,88 @@ def test_quantile_model_must_supply_coverage() -> None:
     _evaluated(service, "candidate", wape=0.10, with_p90=True)
     with pytest.raises(ValueError, match="empirical P90 coverage"):
         service.gate("candidate", _report(wape=0.15, with_p90=True), reference_id="production-1")
+
+
+def test_gate_registers_a_pending_model_as_pending_manual_approval() -> None:
+    registry = MemoryModelRegistry()
+    service = PromotionService(clock=lambda: NOW, registry=registry)
+    _evaluated(service, "candidate", wape=0.10)
+    service.gate("candidate", _report(wape=0.20), reference_id="production-1")
+
+    model = service.get("candidate")
+    assert model.status is ModelStatus.PENDING_APPROVAL
+    assert model.registry_status is RegistryStatus.PENDING_MANUAL_APPROVAL
+    entry = registry.get(model.registry_arn)
+    assert entry.status is RegistryStatus.PENDING_MANUAL_APPROVAL
+    assert entry.actor_id is None
+    assert model.version == entry.version
+
+
+def test_gate_records_a_rejected_candidate_in_the_registry() -> None:
+    registry = MemoryModelRegistry()
+    service = PromotionService(clock=lambda: NOW, registry=registry)
+    _evaluated(service, "candidate", wape=0.20)
+    service.gate("candidate", _report(wape=0.10), reference_id="production-1")
+
+    model = service.get("candidate")
+    assert model.status is ModelStatus.REJECTED
+    assert model.registry_status is RegistryStatus.REJECTED
+    assert model.approved_by is None
+    assert registry.get(model.registry_arn).status is RegistryStatus.REJECTED
+
+
+def test_approve_updates_the_internal_row_and_the_registry() -> None:
+    registry = MemoryModelRegistry()
+    service = PromotionService(clock=lambda: NOW, registry=registry)
+    _evaluated(service, "candidate", wape=0.10)
+    service.gate("candidate", _report(wape=0.20), reference_id="production-1")
+
+    approved = service.approve("candidate", "analyst-7")
+
+    assert approved.status is ModelStatus.APPROVED
+    assert approved.registry_status is RegistryStatus.APPROVED
+    assert approved.approved_by == "analyst-7"
+    entry = registry.get(approved.registry_arn)
+    assert entry.status is RegistryStatus.APPROVED
+    assert entry.actor_id == "analyst-7"
+    assert approved.version == entry.version
+
+
+def test_approve_without_a_registry_updates_only_the_internal_row() -> None:
+    approved = _pending().approve("candidate", "analyst-7")
+
+    assert approved.status is ModelStatus.APPROVED
+    assert approved.approved_by == "analyst-7"
+    assert approved.registry_arn == ""
+    assert approved.registry_status is None
+
+
+def test_reject_updates_the_registry_and_stores_the_actor() -> None:
+    registry = MemoryModelRegistry()
+    service = PromotionService(clock=lambda: NOW, registry=registry)
+    _evaluated(service, "candidate", wape=0.10)
+    service.gate("candidate", _report(wape=0.20), reference_id="production-1")
+
+    rejected = service.reject("candidate", "analyst-7", HUMAN_REJECTION)
+
+    assert rejected.status is ModelStatus.REJECTED
+    assert rejected.rejected_by == "analyst-7"
+    assert rejected.registry_status is RegistryStatus.REJECTED
+    assert registry.get(rejected.registry_arn).actor_id == "analyst-7"
+
+
+def test_promote_leaves_the_registry_status_approved() -> None:
+    registry = MemoryModelRegistry()
+    service = PromotionService(clock=lambda: NOW, registry=registry)
+    _evaluated(service, "candidate", wape=0.10)
+    service.gate("candidate", _report(wape=0.20), reference_id="production-1")
+    service.approve("candidate", "analyst-7")
+
+    promoted = service.promote("candidate", "analyst-7")
+
+    assert promoted.status is ModelStatus.PRODUCTION
+    assert promoted.registry_status is RegistryStatus.APPROVED
+    assert registry.get(promoted.registry_arn).status is RegistryStatus.APPROVED
 
 
 def test_empirical_p90_coverage_is_the_share_at_or_below_p90() -> None:

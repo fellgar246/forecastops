@@ -3,6 +3,8 @@
 Services and the local job runner call these methods. They do not issue SQL themselves.
 """
 
+from datetime import UTC, date, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -122,6 +124,21 @@ class Repository:
 
         return self._session.get(ForecastRunRow, forecast_id)
 
+    def get_forecast_by_idempotency_key(self, key: str) -> ForecastRunRow | None:
+        """Return the forecast stored for ``key``, if the client sent one before."""
+
+        statement = select(ForecastRunRow).where(ForecastRunRow.idempotency_key == key)
+        return self._session.scalars(statement).first()
+
+    def count_forecasts_created_on(self, day: date) -> int:
+        """Return how many forecast runs were requested on ``day`` in UTC."""
+
+        total = 0
+        for row in self.list_forecasts():
+            if _utc(row.created_at).date() == day:
+                total += 1
+        return total
+
     def list_forecasts(self) -> list[ForecastRunRow]:
         """Return forecast runs in request order."""
 
@@ -137,3 +154,9 @@ class Repository:
             .order_by(PromotionDecisionRow.created_at)
         )
         return list(self._session.scalars(statement))
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

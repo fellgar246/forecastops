@@ -62,11 +62,13 @@ make profile-data OUT=data/synthetic
 
 `make train-deepar` submits one CPU training job for a weekly small slice. It runs when `SAGEMAKER_ENABLED`, `TRAINING_ENABLED`, and `AWS_ML_ENABLED` are all true. With the default flags it prints a reason and does not call the training API. CI does not run it. The instance type, 45 minute cap, and manual steps are in `docs/ml/README.md`.
 
+`make start-pipeline` starts one training pipeline for a dataset version, git SHA, and configuration file. It uses the same flags. With the defaults it prints a reason and does not call the pipeline API. CI does not run it, and schedules stay off.
+
 `make aws-deploy`, `make aws-status`, `make aws-cost-check`, `make aws-destroy`, and `make aws-clean-artifacts` are reserved and do not call cloud APIs.
 
 ## Cloud profile
 
-Terraform under `infra/` describes an optional cloud layout. The default `dev` and `demo` environments leave serverless endpoints, Bedrock, and schedules off, and they declare no training job, real-time endpoint, or notebook. Object storage in that layout blocks public access, encrypts objects, and expires non-current versions. A monthly budget of $5 alerts at $1, $3, and $5, plus when forecasted spend exceeds $5.
+Terraform under `infra/` describes an optional cloud layout. The default `dev` and `demo` environments leave serverless endpoints, Bedrock, and schedules off, and they declare no training job, real-time endpoint, or notebook. A cloud `deepar` forecast uses batch transform rather than an endpoint. `ONLINE_INFERENCE` stays false. Object storage in that layout blocks public access, encrypts objects, and expires non-current versions. A monthly budget of $5 alerts at $1, $3, and $5, plus when forecasted spend exceeds $5.
 
 `make aws-plan` formats and validates that configuration. It does not create resources. Do not apply it until the budget email, GitHub repository, and bucket name prefix in the environment variables are yours.
 

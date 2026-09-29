@@ -11,8 +11,10 @@ from sqlalchemy.orm import sessionmaker
 
 from forecastops_api.artifacts import select_artifact_store
 from forecastops_api.errors import install_error_handlers
+from forecastops_api.forecast_jobs import select_batch_inference
 from forecastops_api.health import router as health_router
 from forecastops_api.logging import configure_logging
+from forecastops_api.registry import select_model_registry
 from forecastops_api.routes import router as forecast_router
 from forecastops_api.settings import Settings, get_settings
 
@@ -43,6 +45,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = resolved
     application.state.artifact_dir = resolved.artifact_dir
     application.state.artifact_store = select_artifact_store(resolved)
+    application.state.model_registry = select_model_registry(resolved)
+    application.state.batch_inference = select_batch_inference(resolved)
+    application.state.execute_forecasts_inline = True
+    application.state.forecast_predictor = None
     engine = create_engine(resolved.database_url)
     application.state.engine = engine
     application.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)

@@ -12,6 +12,7 @@ from forecastops_api.artifacts import (
     upload_object_name,
 )
 from forecastops_api.errors import ApiError
+from forecastops_api.forecast_jobs import ForecastExecutor, ForecastPredictor
 from forecastops_api.persistence import (
     DatasetRow,
     ForecastRunRow,
@@ -50,12 +51,21 @@ from forecastops_api.series import (
     empty_series,
     point_matches,
 )
-from forecastops_api.settings import Settings
+from forecastops_api.settings import ExecutionMode, Settings
 from forecastops_contracts import SCHEMA_VERSION
 from forecastops_ml.data import load_dataset, validate_dataset
 from forecastops_ml.data.quality import ValidationConfig
+from forecastops_ml.inference import BatchCapacityError, BatchInference, admit_forecast
+from forecastops_ml.promotion.models import ModelStatus, RegistryStatus
+from forecastops_ml.registry import (
+    ForecastSelectionError,
+    ModelRegistry,
+    RegistryEntry,
+    RegistryError,
+    registry_status_for,
+    select_forecast_model,
+)
 
-_FORECASTABLE = {"APPROVED", "PRODUCTION"}
 _CLOUD_FAMILIES = {"deepar"}
 
 
@@ -67,11 +77,17 @@ class ForecastService:
         repository: Repository,
         settings: Settings,
         artifacts: ArtifactStore,
+        registry: ModelRegistry | None = None,
+        *,
+        batch: BatchInference | None = None,
+        predictor: ForecastPredictor | None = None,
     ) -> None:
         self._repository = repository
         self._settings = settings
         self._artifacts = artifacts
+        self._registry = registry
         self._runner = LocalJobRunner(repository, artifacts)
+        self._forecasts = ForecastExecutor(repository, artifacts, batch, predictor)
 
     def register_dataset(self, body: DatasetCreate) -> DatasetRow:
         """Record a dataset directory and its observation window."""
@@ -191,7 +207,9 @@ class ForecastService:
         )
         self._repository.add(run)
         frame, _dimensions = load_dataset(Path(dataset.uri))
-        self._runner.train(run, frame)
+        model = self._runner.train(run, frame)
+        if model is not None:
+            self._register_gated_model(model)
         return run
 
     def list_training_runs(self) -> list[TrainingRunRow]:
@@ -227,9 +245,11 @@ class ForecastService:
                 "invalid_transition",
                 f"Model cannot be approved from {model.status}.",
             )
+        entry = self._record_human_decision(model, body.actor_id, approve=True)
         model.status = "APPROVED"
         model.approved_at = _now()
         model.approved_by = body.actor_id
+        _apply_registry_entry(model, entry)
         self._repository.add(
             PromotionDecisionRow(
                 id=str(uuid4()),
@@ -262,9 +282,11 @@ class ForecastService:
                 "invalid_transition",
                 f"Model cannot be rejected from {model.status}.",
             )
+        entry = self._record_human_decision(model, body.actor_id, approve=False)
         model.status = "REJECTED"
         model.rejected_by = body.actor_id
         model.rejection_reason = "human"
+        _apply_registry_entry(model, entry)
         self._repository.add(
             PromotionDecisionRow(
                 id=str(uuid4()),
@@ -283,19 +305,20 @@ class ForecastService:
         self._repository.save()
         return model
 
-    def start_forecast(self, body: ForecastCreate) -> ForecastRunRow:
-        """Queue a forecast and execute it in this process."""
+    def start_forecast(self, body: ForecastCreate, *, execute: bool = True) -> ForecastRunRow:
+        """Queue a forecast. Execution follows when ``execute`` is true."""
 
+        key = _idempotency_key(body.idempotency_key)
+        if key is not None:
+            existing = self._repository.get_forecast_by_idempotency_key(key)
+            if existing is not None:
+                return existing
         self._require_horizon(body.horizon, body.granularity)
         model = _require_model(self._repository, body.model_id)
-        if model.status not in _FORECASTABLE:
-            raise ApiError(
-                409,
-                "model_not_approved",
-                "Forecasts require a model in APPROVED or PRODUCTION status.",
-            )
+        self._require_forecastable(model)
         dataset_id = body.dataset_id or model.dataset_id
         dataset = _require_dataset(self._repository, dataset_id)
+        self._require_batch_capacity()
         forecast = ForecastRunRow(
             id=str(uuid4()),
             model_version_id=model.id,
@@ -306,11 +329,20 @@ class ForecastService:
             status="QUEUED",
             output_uri="",
             error_message=None,
+            idempotency_key=key,
             created_at=_now(),
         )
         self._repository.add(forecast)
-        frame, _dimensions = load_dataset(Path(dataset.uri))
-        self._runner.forecast(forecast, frame, model.model_family)
+        self._repository.save()
+        if execute:
+            self.execute_forecast(forecast.id)
+        return forecast
+
+    def execute_forecast(self, forecast_id: str) -> ForecastRunRow:
+        """Run a queued forecast and return the updated row."""
+
+        forecast = self.get_forecast(forecast_id)
+        self._forecasts.run(forecast)
         return forecast
 
     def list_forecasts(self) -> list[ForecastRunRow]:
@@ -497,6 +529,79 @@ class ForecastService:
             )
         )
 
+    def _cloud_forecast(self) -> bool:
+        return self._registry is not None or self._settings.execution_mode is ExecutionMode.AWS
+
+    def _register_gated_model(self, model: ModelVersionRow) -> None:
+        """Record a gated candidate when the cloud registry is enabled."""
+
+        registry = self._registry
+        if registry is None:
+            return
+        try:
+            internal = ModelStatus(model.status)
+        except ValueError:
+            return
+        if internal not in {ModelStatus.PENDING_APPROVAL, ModelStatus.REJECTED}:
+            return
+        try:
+            entry = registry.register(
+                model_id=model.id,
+                model_family=model.model_family,
+                version=model.version,
+                status=registry_status_for(internal),
+            )
+        except RegistryError as exc:
+            raise ApiError(409, "registry_rejected", str(exc)) from exc
+        _apply_registry_entry(model, entry)
+        self._repository.save()
+
+    def _record_human_decision(
+        self,
+        model: ModelVersionRow,
+        actor_id: str,
+        *,
+        approve: bool,
+    ) -> RegistryEntry | None:
+        """Update the registry when one is attached."""
+
+        registry = self._registry
+        if registry is None:
+            return None
+        if model.registry_arn == "":
+            raise ApiError(409, "not_registered", "A cloud decision requires a registered model.")
+        try:
+            if approve:
+                return registry.approve(model.registry_arn, actor_id=actor_id)
+            return registry.reject(model.registry_arn, actor_id=actor_id)
+        except RegistryError as exc:
+            raise ApiError(409, "invalid_transition", str(exc)) from exc
+
+    def _require_forecastable(self, model: ModelVersionRow) -> None:
+        cloud = self._cloud_forecast()
+        try:
+            select_forecast_model(
+                internal_status=ModelStatus(model.status),
+                registry_status=self._observed_registry_status(model) if cloud else None,
+                cloud=cloud,
+            )
+        except (ForecastSelectionError, ValueError) as exc:
+            raise ApiError(409, "model_not_approved", str(exc)) from exc
+
+    def _observed_registry_status(self, model: ModelVersionRow) -> RegistryStatus | None:
+        registry = self._registry
+        if registry is not None and model.registry_arn:
+            try:
+                return registry.get(model.registry_arn).status
+            except RegistryError as exc:
+                raise ApiError(409, "model_not_approved", str(exc)) from exc
+        if model.registry_status == "":
+            return None
+        try:
+            return RegistryStatus(model.registry_status)
+        except ValueError:
+            return None
+
     def _promote(self, model: ModelVersionRow, actor_id: str) -> None:
         for other in self._repository.production_for_family(model.model_family):
             if other.id == model.id:
@@ -519,6 +624,19 @@ class ForecastService:
             )
         )
 
+    def _require_batch_capacity(self) -> None:
+        limit = self._settings.max_batch_inference_jobs_per_day
+        started = self._repository.count_forecasts_created_on(_now().date())
+        try:
+            admit_forecast(jobs_started_today=started, daily_limit=limit, replay=False)
+        except BatchCapacityError as exc:
+            raise ApiError(
+                429,
+                "batch_inference_limit",
+                str(exc),
+                {"max_batch_inference_jobs_per_day": limit},
+            ) from exc
+
     def _require_horizon(self, horizon: int, granularity: str) -> None:
         days = horizon * 7 if granularity == "week" else horizon
         limit = self._settings.max_forecast_horizon_days
@@ -529,6 +647,15 @@ class ForecastService:
                 f"Forecast horizon cannot exceed {limit} days.",
                 {"horizon_days": days, "max_forecast_horizon_days": limit},
             )
+
+
+def _idempotency_key(value: str | None) -> str | None:
+    if value is None:
+        return None
+    key = value.strip()
+    if key == "":
+        return None
+    return key
 
 
 def dataset_response(row: DatasetRow) -> DatasetResponse:
@@ -582,6 +709,7 @@ def model_response(row: ModelVersionRow, promotion: PromotionBody | None = None)
         dataset_id=row.dataset_id,
         dataset_version=row.dataset_version,
         registry_arn=row.registry_arn,
+        registry_status=row.registry_status,
         status=row.status,  # type: ignore[arg-type]
         metrics=row.metrics,
         rejection_reason=row.rejection_reason,
@@ -639,6 +767,14 @@ def _require_dataset(repository: Repository, dataset_id: str) -> DatasetRow:
     if dataset is None:
         raise ApiError(404, "not_found", "Dataset was not found.")
     return dataset
+
+
+def _apply_registry_entry(model: ModelVersionRow, entry: RegistryEntry | None) -> None:
+    if entry is None:
+        return
+    model.registry_arn = entry.arn
+    model.version = entry.version
+    model.registry_status = entry.status.value
 
 
 def _require_model(repository: Repository, model_id: str) -> ModelVersionRow:

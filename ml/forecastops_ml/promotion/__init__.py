@@ -14,7 +14,7 @@ from forecastops_ml.promotion.gate import (
     empirical_p90_coverage,
     gate,
 )
-from forecastops_ml.promotion.models import ModelStatus, ModelVersion
+from forecastops_ml.promotion.models import ModelStatus, ModelVersion, RegistryStatus
 from forecastops_ml.promotion.reference import reference_report, seasonal_naive_for
 from forecastops_ml.promotion.service import PromotionError, PromotionService
 from forecastops_ml.promotion.thresholds import (
@@ -37,6 +37,7 @@ __all__ = [
     "PromotionError",
     "PromotionService",
     "PromotionThresholds",
+    "RegistryStatus",
     "SegmentRegression",
     "empirical_p90_coverage",
     "gate",
