@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from forecastops_api.artifacts import ArtifactStore
 from forecastops_api.explanations import ExplanationService
 from forecastops_api.repositories import Repository
+from forecastops_api.schedules import ScheduleService
 from forecastops_api.schemas import (
     AcceptedJob,
     ApproveRequest,
+    ConfirmRetrainRequest,
     DataQualityList,
     DatasetCatalog,
     DatasetCreate,
@@ -21,6 +23,7 @@ from forecastops_api.schemas import (
     DatasetUploadResponse,
     DatasetValidate,
     ForecastCreate,
+    ForecastErrorEvaluationResponse,
     ForecastList,
     ForecastResponse,
     ForecastSeries,
@@ -30,6 +33,9 @@ from forecastops_api.schemas import (
     PresignedUploadRequest,
     PresignedUploadResponse,
     RejectRequest,
+    RetrainRequestList,
+    RetrainRequestResponse,
+    ScheduledForecastResponse,
     TrainingCreate,
     TrainingList,
     TrainingResponse,
@@ -80,6 +86,15 @@ def get_service(request: Request, session: SessionDep) -> ForecastService:
 
 
 ServiceDep = Annotated[ForecastService, Depends(get_service)]
+
+
+def get_schedules(service: ServiceDep, session: SessionDep) -> ScheduleService:
+    """Build the schedule service for this request."""
+
+    return ScheduleService(service, Repository(session))
+
+
+ScheduleDep = Annotated[ScheduleService, Depends(get_schedules)]
 
 
 def get_explanations(request: Request, session: SessionDep) -> ExplanationService:
@@ -329,3 +344,57 @@ def retrain(service: ServiceDep) -> AcceptedJob:
 
     run = service.retrain()
     return AcceptedJob(job_id=run.id)
+
+
+@router.post(
+    "/admin/schedules/daily_forecast",
+    status_code=202,
+    response_model=ScheduledForecastResponse,
+)
+def daily_forecast(schedules: ScheduleDep) -> ScheduledForecastResponse:
+    """Refresh the data marker and generate the latest forecast."""
+
+    return schedules.refresh_and_forecast()
+
+
+@router.post(
+    "/admin/schedules/weekly_evaluation",
+    response_model=ForecastErrorEvaluationResponse,
+)
+def weekly_evaluation(schedules: ScheduleDep) -> ForecastErrorEvaluationResponse:
+    """Score the latest forecast against actuals that have arrived."""
+
+    return schedules.evaluate_forecast_error()
+
+
+@router.post(
+    "/admin/schedules/monthly_retrain",
+    status_code=202,
+    response_model=RetrainRequestResponse,
+)
+def monthly_retrain(schedules: ScheduleDep) -> RetrainRequestResponse:
+    """Create a retrain request and wait for a person to confirm it."""
+
+    return schedules.request_retrain()
+
+
+@router.get("/admin/retrain-requests", response_model=RetrainRequestList)
+def list_retrain_requests(schedules: ScheduleDep) -> RetrainRequestList:
+    """Return retrain requests, including those still waiting for confirmation."""
+
+    return RetrainRequestList(items=schedules.list_retrain_requests())
+
+
+@router.post(
+    "/admin/retrain-requests/{request_id}/confirm",
+    status_code=202,
+    response_model=RetrainRequestResponse,
+)
+def confirm_retrain(
+    request_id: str,
+    body: ConfirmRetrainRequest,
+    schedules: ScheduleDep,
+) -> RetrainRequestResponse:
+    """Start training for a pending request. The new model is not promoted."""
+
+    return schedules.confirm_retrain(request_id, body.actor_id)

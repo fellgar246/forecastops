@@ -4,6 +4,6 @@ variable "environment" {
 }
 
 variable "enable_schedules" {
-  description = "Reserved switch for future schedules. No schedule is declared while this stays false."
+  description = "Create the daily, weekly, and monthly schedules. Leave this false to create none."
   type        = bool
 }

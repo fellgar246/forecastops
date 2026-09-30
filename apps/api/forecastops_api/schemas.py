@@ -332,6 +332,56 @@ class ExplanationSignal(BaseModel):
     kind: Literal["driver", "context"] = "context"
 
 
+class ScheduledForecastResponse(BaseModel):
+    """A data refresh marker and the forecast it started."""
+
+    marker_id: str
+    dataset_id: str
+    refreshed_at: datetime
+    forecast_id: str
+    forecast_status: ForecastStatus
+
+
+class ForecastErrorEvaluationResponse(BaseModel):
+    """Error between a stored forecast and actuals that have arrived."""
+
+    id: str
+    forecast_run_id: str
+    compared_points: int
+    wape: float | None
+    bias: float | None
+    created_at: datetime
+
+
+RetrainRequestStatus = Literal["PENDING", "CONFIRMED"]
+
+
+class RetrainRequestResponse(BaseModel):
+    """A retrain request waiting for a person, or the training run they confirmed."""
+
+    id: str
+    status: RetrainRequestStatus
+    dataset_id: str
+    model_version_id: str
+    model_family: str
+    training_run_id: str | None
+    requested_at: datetime
+    confirmed_at: datetime | None
+    confirmed_by: str | None
+
+
+class RetrainRequestList(BaseModel):
+    """Retrain requests in creation order."""
+
+    items: list[RetrainRequestResponse]
+
+
+class ConfirmRetrainRequest(BaseModel):
+    """Person who confirms a retrain request. Confirmation does not promote the model."""
+
+    actor_id: str = Field(min_length=1)
+
+
 class ExplanationResponse(BaseModel):
     """A validated explanation and the package it was written from."""
 

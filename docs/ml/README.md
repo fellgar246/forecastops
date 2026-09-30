@@ -158,7 +158,7 @@ The bucket is `ARTIFACTS_BUCKET`. The pipeline role is `PIPELINE_ROLE_ARN`. The 
 
 A finished execution stores the git SHA, dataset version, resolved configuration, metric document, and artifact locations on the training run. Those locations are the quality report, channel prefix, model prefix, and metrics file for that dataset version.
 
-`enable_schedules` stays false. No rule starts this pipeline on a timer.
+`enable_schedules` stays false in the default environment, so no rule starts this pipeline on a timer. Turning the flag on adds a monthly retrain request. That request stays `PENDING` until a person confirms it. Confirmation starts a training run and does not set the model to `PRODUCTION`.
 
 ## Promotion
 

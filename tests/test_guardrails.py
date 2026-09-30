@@ -16,7 +16,6 @@ FORBIDDEN_RESOURCES = (
     "aws_sagemaker_hyperparameter_tuning_job",
     "aws_cloudwatch_event_rule",
     "aws_cloudwatch_event_target",
-    "aws_scheduler_schedule",
 )
 
 REQUIRED_TAGS = (
@@ -57,7 +56,7 @@ SKIP_PARTS = {
 }
 
 
-def test_default_plan_has_no_training_job_endpoint_notebook_or_schedule() -> None:
+def test_default_plan_has_no_training_job_endpoint_or_notebook() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in INFRA.rglob("*.tf"))
     for resource in FORBIDDEN_RESOURCES:
         assert resource not in combined
@@ -72,6 +71,22 @@ def test_environment_flags_default_off() -> None:
         assert "enable_serverless_endpoint = true" not in text
         assert "enable_bedrock = true" not in text
         assert "enable_schedules = true" not in text
+
+
+def test_default_environment_enables_zero_schedules() -> None:
+    eventbridge = (INFRA / "modules" / "eventbridge" / "main.tf").read_text(encoding="utf-8")
+    assert "for_each = var.enable_schedules ? local.schedules : {}" in eventbridge
+    assert eventbridge.count('resource "aws_scheduler_schedule"') == 1
+    for action in ("daily_forecast", "weekly_evaluation", "monthly_retrain"):
+        assert action in eventbridge
+    assert "sagemaker" not in eventbridge.lower()
+    outputs = (INFRA / "modules" / "eventbridge" / "outputs.tf").read_text(encoding="utf-8")
+    assert "var.enable_schedules ? length(local.schedules) : 0" in outputs
+    handler = (INFRA / "modules" / "eventbridge" / "src" / "handler.py").read_text(encoding="utf-8")
+    assert "PENDING" in handler
+    assert "training_started" in handler
+    assert "boto3" not in handler
+    assert "sagemaker" not in handler.lower()
 
 
 def test_budget_and_log_retention() -> None:

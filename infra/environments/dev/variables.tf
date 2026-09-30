@@ -41,7 +41,7 @@ variable "enable_bedrock" {
 }
 
 variable "enable_schedules" {
-  description = "Keep schedules off."
+  description = "Create the daily, weekly, and monthly schedules. The default creates none."
   type        = bool
   default     = false
 }

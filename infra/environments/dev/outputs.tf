@@ -10,6 +10,10 @@ output "schedules_enabled" {
   value = module.eventbridge.schedules_enabled
 }
 
+output "enabled_schedule_count" {
+  value = module.eventbridge.enabled_schedule_count
+}
+
 output "budget_arn" {
   value = module.budget.budget_arn
 }

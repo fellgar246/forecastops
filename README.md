@@ -62,7 +62,9 @@ make profile-data OUT=data/synthetic
 
 `make train-deepar` submits one CPU training job for a weekly small slice. It runs when `SAGEMAKER_ENABLED`, `TRAINING_ENABLED`, and `AWS_ML_ENABLED` are all true. With the default flags it prints a reason and does not call the training API. CI does not run it. The instance type, 45 minute cap, and manual steps are in `docs/ml/README.md`.
 
-`make start-pipeline` starts one training pipeline for a dataset version, git SHA, and configuration file. It uses the same flags. With the defaults it prints a reason and does not call the pipeline API. CI does not run it, and schedules stay off.
+`make start-pipeline` starts one training pipeline for a dataset version, git SHA, and configuration file. It uses the same flags. With the defaults it prints a reason and does not call the pipeline API. CI does not run it. Schedules stay off unless `enable_schedules` is changed from its default of false.
+
+`make refresh-forecast`, `make evaluate-forecasts`, and `make request-retrain` run the daily, weekly, and monthly operations on this machine. They do not call a cloud scheduler. The monthly command records a retrain request and waits. Confirming that request starts training and does not promote the model. How to turn the cloud clocks on for a showcase, and off again, is in `docs/architecture/overview.md`.
 
 `make aws-deploy`, `make aws-status`, `make aws-cost-check`, `make aws-destroy`, and `make aws-clean-artifacts` are reserved and do not call cloud APIs.
 

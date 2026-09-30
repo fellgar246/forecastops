@@ -16,4 +16,4 @@ The infrastructure defines a monthly budget of $5 with alerts at $1, $3, and $5 
 
 ## Consequences
 
-The default environment declares no training job, real-time endpoint, notebook, or schedule. Spend requires a deliberate flag change. Alerts fire before the monthly ceiling. Local development keeps working when the cloud switches are off.
+The default environment declares no training job, real-time endpoint, or notebook. Schedules are created only when `enable_schedules` is true, and that variable defaults to false. Spend requires a deliberate flag change. Alerts fire before the monthly ceiling. Local development keeps working when the cloud switches are off.

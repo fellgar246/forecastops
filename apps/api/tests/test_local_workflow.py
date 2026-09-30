@@ -30,6 +30,11 @@ ROUTES = {
     "/metrics/model-performance",
     "/metrics/data-quality",
     "/admin/retrain",
+    "/admin/schedules/daily_forecast",
+    "/admin/schedules/weekly_evaluation",
+    "/admin/schedules/monthly_retrain",
+    "/admin/retrain-requests",
+    "/admin/retrain-requests/{request_id}/confirm",
 }
 
 

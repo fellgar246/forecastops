@@ -7,11 +7,14 @@ from sqlalchemy import create_engine, pool
 
 from forecastops_api.db import Base
 from forecastops_api.persistence import (  # noqa: F401
+    DataRefreshMarkerRow,
     DatasetRow,
+    ForecastErrorEvaluationRow,
     ForecastPointRow,
     ForecastRunRow,
     ModelVersionRow,
     PromotionDecisionRow,
+    RetrainRequestRow,
     TrainingRunRow,
 )
 from forecastops_api.settings import get_settings

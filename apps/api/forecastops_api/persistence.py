@@ -133,6 +133,50 @@ class AIExplanationRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class DataRefreshMarkerRow(Base):
+    """One record that a scheduled refresh touched a dataset."""
+
+    __tablename__ = "data_refresh_markers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ForecastErrorEvaluationRow(Base):
+    """Forecast error for points whose actuals have arrived."""
+
+    __tablename__ = "forecast_error_evaluations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    forecast_run_id: Mapped[str] = mapped_column(ForeignKey("forecast_runs.id"), index=True)
+    compared_points: Mapped[int] = mapped_column(Integer)
+    wape: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bias: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RetrainRequestRow(Base):
+    """A request to train again. Training starts only after a person confirms it."""
+
+    __tablename__ = "retrain_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
+    model_version_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
+    model_family: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    training_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("training_runs.id"),
+        nullable=True,
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ForecastPointRow(Base):
     """One quantile forecast for a series on a date."""
 

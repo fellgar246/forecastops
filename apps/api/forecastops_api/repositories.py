@@ -15,6 +15,7 @@ from forecastops_api.persistence import (
     ForecastRunRow,
     ModelVersionRow,
     PromotionDecisionRow,
+    RetrainRequestRow,
     TrainingRunRow,
 )
 
@@ -189,6 +190,40 @@ class Repository:
             if _utc(row.created_at).date() == day:
                 total += 1
         return total
+
+    def latest_succeeded_forecast(self) -> ForecastRunRow | None:
+        """Return the newest forecast that finished successfully."""
+
+        statement = (
+            select(ForecastRunRow)
+            .where(ForecastRunRow.status == "SUCCEEDED")
+            .order_by(ForecastRunRow.created_at.desc(), ForecastRunRow.id.desc())
+        )
+        return self._session.scalars(statement).first()
+
+    def get_retrain_request(self, request_id: str) -> RetrainRequestRow | None:
+        """Return one retrain request."""
+
+        return self._session.get(RetrainRequestRow, request_id)
+
+    def pending_retrain_request(self) -> RetrainRequestRow | None:
+        """Return the open retrain request, if a person has not confirmed one yet."""
+
+        statement = (
+            select(RetrainRequestRow)
+            .where(RetrainRequestRow.status == "PENDING")
+            .order_by(RetrainRequestRow.requested_at.desc(), RetrainRequestRow.id.desc())
+        )
+        return self._session.scalars(statement).first()
+
+    def list_retrain_requests(self) -> list[RetrainRequestRow]:
+        """Return retrain requests in creation order."""
+
+        statement = select(RetrainRequestRow).order_by(
+            RetrainRequestRow.created_at,
+            RetrainRequestRow.id,
+        )
+        return list(self._session.scalars(statement))
 
     def list_decisions(self, candidate_id: str) -> list[PromotionDecisionRow]:
         """Return promotion decisions for one model."""

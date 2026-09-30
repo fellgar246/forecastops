@@ -340,8 +340,8 @@ def test_default_infrastructure_keeps_schedules_disabled() -> None:
         assert re.search(r'variable "enable_schedules"[\s\S]*?default\s*=\s*false', text)
         assert "enable_schedules = true" not in text
     eventbridge = (infra / "modules" / "eventbridge" / "main.tf").read_text(encoding="utf-8")
+    assert "for_each = var.enable_schedules ? local.schedules : {}" in eventbridge
     assert "aws_cloudwatch_event_rule" not in eventbridge
-    assert "aws_scheduler_schedule" not in eventbridge
     source = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (ROOT / "ml" / "forecastops_ml" / "pipelines").glob("*.py")

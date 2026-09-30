@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data profile-data train-deepar start-pipeline aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data train-deepar start-pipeline refresh-forecast evaluate-forecasts request-retrain aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
 
 test:
 	uv run pytest
@@ -30,6 +30,15 @@ train-deepar:
 
 start-pipeline:
 	uv run python scripts/train/start_pipeline.py --dataset-version "$(DATASET_VERSION)" --git-sha "$(GIT_SHA)" --config "$(CONFIG)"
+
+refresh-forecast:
+	uv run python scripts/schedule/run_schedule.py daily_forecast
+
+evaluate-forecasts:
+	uv run python scripts/schedule/run_schedule.py weekly_evaluation
+
+request-retrain:
+	uv run python scripts/schedule/run_schedule.py monthly_retrain
 
 aws-plan:
 	./scripts/aws/plan.sh

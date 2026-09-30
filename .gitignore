@@ -28,4 +28,5 @@ override.tf.json
 *_override.tf.json
 .terraform.tfstate.lock.info
 infra/modules/lambda/build/
+infra/modules/eventbridge/build/
 data/
