@@ -207,11 +207,17 @@ export function dataQuality(): Promise<DataQualityList> {
 
 export async function getExplanation(forecastId: string): Promise<ExplanationView> {
   const response = await send(`/forecasts/${forecastId}/explanation`);
+  return readExplanation(response);
+}
+
+export async function requestExplanation(forecastId: string): Promise<ExplanationView> {
+  const response = await send(`/forecasts/${forecastId}/explanation`, { method: "POST" });
+  return readExplanation(response);
+}
+
+async function readExplanation(response: Response): Promise<ExplanationView> {
   if (response.status === 404) {
     return { kind: "missing" };
-  }
-  if (response.status === 202) {
-    return { kind: "pending" };
   }
   if (response.status === 409 || response.status === 422 || response.status === 429) {
     const body = await readError(response);
@@ -219,7 +225,8 @@ export async function getExplanation(forecastId: string): Promise<ExplanationVie
       return { kind: "disabled", message: body.message };
     }
     if (response.status === 422) {
-      return { kind: "invalid", message: body.message };
+      const check = typeof body.details.check === "string" ? body.details.check : "";
+      return { kind: "invalid", message: body.message, check };
     }
     return { kind: "limited", message: body.message };
   }

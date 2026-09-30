@@ -8,6 +8,7 @@ dependencies = [
   "lightgbm>=4.6",
   "numpy>=2.1",
   "pyarrow>=18",
+  "pydantic>=2.6",
   "statsmodels>=0.14",
 ]
 

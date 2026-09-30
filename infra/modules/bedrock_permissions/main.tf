@@ -1,3 +1,5 @@
+# Invoke permission is attached only to the explanation role.
+# The training role does not receive it.
 resource "aws_iam_role_policy" "invoke" {
   count = var.enable_bedrock ? 1 : 0
 

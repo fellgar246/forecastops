@@ -321,3 +321,27 @@ class DataQualityList(BaseModel):
     """Quality reports in dataset registration order."""
 
     items: list[DataQualityItem]
+
+
+class ExplanationSignal(BaseModel):
+    """One signal named by a validated explanation."""
+
+    name: str
+    direction: Literal["positive", "negative"] | None = None
+    value: float | None = None
+    kind: Literal["driver", "context"] = "context"
+
+
+class ExplanationResponse(BaseModel):
+    """A validated explanation and the package it was written from."""
+
+    id: str
+    model_id: str
+    prompt_version: str
+    summary: str
+    signals: list[ExplanationSignal]
+    risks: list[str]
+    uncertainty: str
+    checks: list[str]
+    generated_at: datetime
+    package: dict[str, object]

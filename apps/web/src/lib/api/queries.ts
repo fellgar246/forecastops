@@ -18,6 +18,7 @@ import {
   modelPerformance,
   registerDataset,
   rejectModel,
+  requestExplanation,
   startForecast,
   startTraining,
   validateDataset,
@@ -112,6 +113,16 @@ export function useExplanation(forecastId: string | undefined) {
     queryKey: ["explanation", forecastId],
     queryFn: () => getExplanation(forecastId ?? ""),
     enabled: Boolean(forecastId),
+  });
+}
+
+export function useRequestExplanation(forecastId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => requestExplanation(forecastId),
+    onSuccess: (view) => {
+      client.setQueryData(["explanation", forecastId], view);
+    },
   });
 }
 

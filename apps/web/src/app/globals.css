@@ -761,6 +761,12 @@ a {
   gap: var(--space-2);
 }
 
+.explanation-package {
+  overflow: auto;
+  max-height: 16rem;
+  white-space: pre-wrap;
+}
+
 .skeleton-block,
 .skeleton-line {
   height: 120px;

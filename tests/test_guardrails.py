@@ -101,6 +101,19 @@ def test_resources_use_required_tags() -> None:
         assert "Environment = var.environment" in text
 
 
+def test_explanation_invoke_stays_off_the_training_role() -> None:
+    for name in ("training.json", "pipeline.json", "inference.json", "api.json"):
+        text = (INFRA / "policies" / name).read_text(encoding="utf-8")
+        assert "bedrock" not in text.lower()
+    invoke = (INFRA / "modules" / "bedrock_permissions" / "main.tf").read_text(encoding="utf-8")
+    assert "bedrock:InvokeModel" in invoke
+    assert "explanation_role_name" in invoke
+    iam = (INFRA / "modules" / "iam" / "main.tf").read_text(encoding="utf-8")
+    training = iam.split('resource "aws_iam_role" "training"', 1)[1].split("resource ", 1)[0]
+    assert "bedrock" not in training.lower()
+    assert "explanation" not in training.lower()
+
+
 def test_architecture_records_exist() -> None:
     adr_dir = ROOT / "docs" / "adr"
     assert len(list(adr_dir.glob("*.md"))) == 7

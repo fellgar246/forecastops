@@ -1,5 +1,5 @@
 import { fireEvent, screen } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { ExplanationPanel } from "@/components/explanation-panel";
 import { ForecastChart } from "@/components/forecast-chart";
 import { CostPage } from "@/features/cost/cost-page";
@@ -268,11 +268,49 @@ test("forecast filters are sent to the series endpoint", async () => {
 
 test("explanation panel states that nothing has been generated on 409", () => {
   renderPage(
-    <ExplanationPanel view={{ kind: "disabled", message: "Explanations are not enabled." }} />,
+    <ExplanationPanel
+      view={{ kind: "disabled", message: "Explanations are not enabled." }}
+      onGenerate={() => undefined}
+    />,
   );
   expect(
     screen.getByText("No explanation has been generated yet. Explanations are turned off in this environment."),
   ).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Generate explanation" })).toBeNull();
+});
+
+test("explanation panel can generate and retry a failed check", () => {
+  const onGenerate = vi.fn();
+  const missing = renderPage(<ExplanationPanel view={{ kind: "missing" }} onGenerate={onGenerate} />);
+  fireEvent.click(screen.getByRole("button", { name: "Generate explanation" }));
+  expect(onGenerate).toHaveBeenCalledOnce();
+  missing.unmount();
+
+  const invalid = renderPage(
+    <ExplanationPanel
+      view={{ kind: "invalid", message: "The explanation failed the forecast_numbers check.", check: "forecast_numbers" }}
+      onGenerate={onGenerate}
+    />,
+  );
+  expect(screen.getByText(/Failed check: forecast_numbers/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(onGenerate).toHaveBeenCalledTimes(2);
+  invalid.unmount();
+});
+
+test("explanation quota notice has no retry", () => {
+  renderPage(
+    <ExplanationPanel
+      view={{
+        kind: "limited",
+        message: "The daily explanation limit of 30 calls has been reached. It resets at 00:00 UTC.",
+      }}
+      onGenerate={() => undefined}
+    />,
+  );
+  expect(screen.getByText(/resets at 00:00 UTC/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Generate explanation" })).toBeNull();
 });
 
 test("forecast chart says when quantiles are missing", () => {

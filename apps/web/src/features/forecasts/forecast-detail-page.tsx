@@ -8,7 +8,7 @@ import { ForecastChart } from "@/components/forecast-chart";
 import { MissingValue } from "@/components/missing-value";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { useExplanation, useForecast, useForecastSeries, useModel } from "@/lib/api/queries";
+import { useExplanation, useForecast, useForecastSeries, useModel, useRequestExplanation } from "@/lib/api/queries";
 import { chartPoints } from "@/lib/chart-points";
 import { formatDate, formatHorizon, formatId, formatRatioPercent, formatUnits } from "@/lib/format";
 import { familyLabel } from "@/lib/status";
@@ -18,6 +18,7 @@ export function ForecastDetailPage({ id }: { id: string }) {
   const series = useForecastSeries(id, {});
   const model = useModel(forecast.data?.model_id);
   const explanation = useExplanation(id);
+  const generate = useRequestExplanation(id);
   if (forecast.error) {
     return (
       <main className="page">
@@ -150,9 +151,16 @@ export function ForecastDetailPage({ id }: { id: string }) {
               )}
             </p>
           </section>
-          <DriversPanel family={run.model_family} />
-          <ExplanationPanel view={explanation.data} />
+          <DriversPanel
+            family={run.model_family}
+            signals={explanation.data?.kind === "ready" ? explanation.data.explanation.signals : []}
+          />
+          <ExplanationPanel
+            view={generate.isPending ? { kind: "pending" } : explanation.data}
+            onGenerate={run.status === "SUCCEEDED" ? () => void generate.mutate() : undefined}
+          />
           {explanation.error ? <ErrorNotice error={explanation.error} onRetry={() => void explanation.refetch()} /> : null}
+          {generate.error ? <ErrorNotice error={generate.error} onRetry={() => void generate.mutate()} /> : null}
         </aside>
       </div>
     </main>

@@ -4,6 +4,7 @@ import forecastops_ml.baselines
 import forecastops_ml.data
 import forecastops_ml.evaluation
 import forecastops_ml.explainability
+import forecastops_ml.explanations
 import forecastops_ml.features
 import forecastops_ml.inference
 import forecastops_ml.pipelines
@@ -21,6 +22,7 @@ def test_library_modules_import() -> None:
         forecastops_ml.evaluation,
         forecastops_ml.inference,
         forecastops_ml.explainability,
+        forecastops_ml.explanations,
         forecastops_ml.pipelines,
         forecastops_ml.promotion,
         forecastops_ml.registry,

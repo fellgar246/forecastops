@@ -109,6 +109,30 @@ class ForecastRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AIExplanationRow(Base):
+    """One explanation attempt for a forecast scope.
+
+    ``status`` is ``valid`` only after the draft passes the deterministic checks.
+    Invalid attempts are kept so the daily call ceiling still counts them.
+    """
+
+    __tablename__ = "ai_explanations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    forecast_run_id: Mapped[str] = mapped_column(ForeignKey("forecast_runs.id"), index=True)
+    scope_key: Mapped[str] = mapped_column(String(500))
+    scope: Mapped[dict[str, str]] = mapped_column(JSON)
+    model_id: Mapped[str] = mapped_column(String(200))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    input_tokens: Mapped[int] = mapped_column(Integer)
+    output_tokens: Mapped[int] = mapped_column(Integer)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    explanation: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    package: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ForecastPointRow(Base):
     """One quantile forecast for a series on a date."""
 

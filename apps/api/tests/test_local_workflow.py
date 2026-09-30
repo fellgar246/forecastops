@@ -113,9 +113,18 @@ def test_local_workflow_trains_seasonal_naive_and_returns_p50(tmp_path: Path) ->
     assert "boto3" not in sys.modules
 
     explanation = client.post(f"/forecasts/{forecast_id}/explanation")
-    assert explanation.status_code == 409
-    assert explanation.json()["message"] == "Explanations are not enabled."
-    assert "summary" not in explanation.json()
+    assert explanation.status_code == 202
+    body = explanation.json()
+    assert body["uncertainty"]
+    assert body["prompt_version"]
+    assert body["summary"]
+    assert "boto3" not in sys.modules
+    cached = client.post(f"/forecasts/{forecast_id}/explanation")
+    assert cached.status_code == 200
+    assert cached.json()["id"] == body["id"]
+    stored = client.get(f"/forecasts/{forecast_id}/explanation")
+    assert stored.status_code == 200
+    assert stored.json()["summary"] == body["summary"]
 
 
 def test_rejected_model_cannot_forecast(tmp_path: Path) -> None:

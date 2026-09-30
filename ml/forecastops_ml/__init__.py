@@ -5,6 +5,7 @@ __all__ = [
     "data",
     "evaluation",
     "explainability",
+    "explanations",
     "features",
     "inference",
     "pipelines",

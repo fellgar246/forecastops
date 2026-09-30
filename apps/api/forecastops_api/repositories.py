@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forecastops_api.persistence import (
+    AIExplanationRow,
     DatasetRow,
     ForecastPointRow,
     ForecastRunRow,
@@ -144,6 +145,50 @@ class Repository:
 
         statement = select(ForecastRunRow).order_by(ForecastRunRow.created_at, ForecastRunRow.id)
         return list(self._session.scalars(statement))
+
+    def find_explanation(
+        self,
+        forecast_run_id: str,
+        scope_key: str,
+        prompt_version: str,
+    ) -> AIExplanationRow | None:
+        """Return the stored explanation for this forecast, scope, and prompt."""
+
+        statement = (
+            select(AIExplanationRow)
+            .where(
+                AIExplanationRow.forecast_run_id == forecast_run_id,
+                AIExplanationRow.scope_key == scope_key,
+                AIExplanationRow.prompt_version == prompt_version,
+                AIExplanationRow.status == "valid",
+            )
+            .order_by(AIExplanationRow.created_at.desc())
+        )
+        return self._session.scalars(statement).first()
+
+    def latest_explanation(self, forecast_run_id: str, scope_key: str) -> AIExplanationRow | None:
+        """Return the newest valid explanation for this forecast and scope."""
+
+        statement = (
+            select(AIExplanationRow)
+            .where(
+                AIExplanationRow.forecast_run_id == forecast_run_id,
+                AIExplanationRow.scope_key == scope_key,
+                AIExplanationRow.status == "valid",
+            )
+            .order_by(AIExplanationRow.created_at.desc())
+        )
+        return self._session.scalars(statement).first()
+
+    def count_explanation_calls_on(self, day: date) -> int:
+        """Return explanation attempts recorded on ``day`` in UTC."""
+
+        statement = select(AIExplanationRow)
+        total = 0
+        for row in self._session.scalars(statement):
+            if _utc(row.created_at).date() == day:
+                total += 1
+        return total
 
     def list_decisions(self, candidate_id: str) -> list[PromotionDecisionRow]:
         """Return promotion decisions for one model."""

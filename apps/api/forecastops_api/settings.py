@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     max_bedrock_calls_per_day: int = Field(gt=0)
     max_bedrock_input_tokens: int = Field(gt=0)
     max_bedrock_output_tokens: int = Field(gt=0)
+    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
     max_training_jobs_per_day: int = Field(ge=0)
     max_training_runtime_minutes: int = Field(gt=0)
     allow_gpu_training: bool

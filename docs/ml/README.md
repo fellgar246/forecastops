@@ -132,6 +132,16 @@ Cloud mode, when `SAGEMAKER_ENABLED` is true and execution is AWS, submits one S
 
 `MAX_BATCH_INFERENCE_JOBS_PER_DAY` limits how many forecast runs can be requested in a UTC day. The next request receives HTTP 429. `MAX_FORECAST_HORIZON_DAYS` limits the horizon. A client may send `idempotency_key`. Repeating that key returns the original run and does not start a second job. A failed run stores an English message. The message does not include dataset rows.
 
+## Explanations
+
+An explanation is written from a small forecast package: scope, quantile totals, recent history, named signals, and model metrics. Numerical demand stays on the forecast. The language model does not change it.
+
+`BEDROCK_ENABLED=false` selects `MockExplanationClient`. It builds a schema-valid explanation from the package fields and does not open a remote client. `BEDROCK_ENABLED=true` selects `BedrockExplanationClient`. The model id comes from `BEDROCK_MODEL_ID`. The prompt version is `v1`. It forbids changing numerical predictions, inventing promotions, inventing causal claims, hiding uncertainty, and claiming certainty.
+
+Tree-model signals may list `positive_drivers` and `negative_drivers`. Those names are associations from the trees. A global probabilistic model receives historical context, recent trend, known future covariates, seasonal pattern, uncertainty, and baseline comparison. Those names are context, not causes.
+
+A draft is rejected when a forecast total in the text is not in the package, a named signal is not in the package, or `uncertainty_note` is empty. Rejected drafts increment `explanation_validation_failures` and are not returned as explanations. The same forecast, scope, and prompt version returns the stored explanation on the next request. `MAX_BEDROCK_CALLS_PER_DAY`, `MAX_BEDROCK_INPUT_TOKENS`, and `MAX_BEDROCK_OUTPUT_TOKENS` stop another provider call. Token counts and latency are logged. The full dataset and the raw prompt are not.
+
 ## Training pipeline
 
 One manual command runs Validate, Process, Train, Evaluate, Quality Gate, and Register. Register runs only when the quality gate leaves the candidate pending approval. A rejected candidate is not registered, and the gate does not approve a model by itself.

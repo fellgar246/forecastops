@@ -264,19 +264,23 @@ export const awsHealthSchema = z.object({
 });
 
 export const explanationSchema = z.object({
+  id: z.string(),
   model_id: z.string(),
   prompt_version: z.string(),
   summary: z.string(),
   signals: z.array(
     z.object({
       name: z.string(),
-      direction: z.enum(["positive", "negative"]),
+      direction: z.enum(["positive", "negative"]).optional(),
+      value: z.number().nullable().optional(),
+      kind: z.enum(["driver", "context"]).optional(),
     }),
   ),
   risks: z.array(z.string()),
   uncertainty: z.string(),
   checks: z.array(z.string()),
   generated_at: z.string(),
+  package: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type Dataset = z.infer<typeof datasetSchema>;
@@ -302,5 +306,5 @@ export type ExplanationView =
   | { kind: "missing" }
   | { kind: "pending" }
   | { kind: "ready"; explanation: Explanation }
-  | { kind: "invalid"; message: string }
+  | { kind: "invalid"; message: string; check: string }
   | { kind: "limited"; message: string };

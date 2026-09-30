@@ -4,10 +4,11 @@ from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from forecastops_api.artifacts import ArtifactStore
-from forecastops_api.errors import ApiError, ErrorBody
+from forecastops_api.explanations import ExplanationService
 from forecastops_api.repositories import Repository
 from forecastops_api.schemas import (
     AcceptedJob,
@@ -42,8 +43,6 @@ from forecastops_api.settings import Settings
 from forecastops_ml.registry import ModelRegistry
 
 router = APIRouter()
-
-EXPLANATIONS_DISABLED = "Explanations are not enabled."
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -81,6 +80,16 @@ def get_service(request: Request, session: SessionDep) -> ForecastService:
 
 
 ServiceDep = Annotated[ForecastService, Depends(get_service)]
+
+
+def get_explanations(request: Request, session: SessionDep) -> ExplanationService:
+    """Build the explanation service for this request."""
+
+    client = getattr(request.app.state, "explanation_client", None)
+    return ExplanationService(Repository(session), request.app.state.settings, client)
+
+
+ExplanationDep = Annotated[ExplanationService, Depends(get_explanations)]
 
 
 @router.post("/datasets", status_code=202, response_model=AcceptedJob)
@@ -254,28 +263,42 @@ def get_forecast_series(
     )
 
 
-@router.post(
-    "/forecasts/{forecast_id}/explanation",
-    status_code=409,
-    response_model=ErrorBody,
-)
-def create_explanation(forecast_id: str) -> ErrorBody:
-    """Explanations are not available yet."""
+@router.post("/forecasts/{forecast_id}/explanation")
+def create_explanation(
+    forecast_id: str,
+    service: ExplanationDep,
+    category: Annotated[str | None, Query()] = None,
+    sku: Annotated[str | None, Query()] = None,
+    store: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    """Write an explanation for a finished forecast, or return the cached one."""
 
-    _ = forecast_id
-    raise ApiError(409, "explanations_disabled", EXPLANATIONS_DISABLED)
+    result = service.request(
+        forecast_id,
+        category=_blank_to_none(category),
+        sku=_blank_to_none(sku),
+        store=_blank_to_none(store),
+    )
+    return JSONResponse(status_code=result.status_code, content=result.content)
 
 
-@router.get(
-    "/forecasts/{forecast_id}/explanation",
-    status_code=409,
-    response_model=ErrorBody,
-)
-def get_explanation(forecast_id: str) -> ErrorBody:
-    """Explanations are not available yet."""
+@router.get("/forecasts/{forecast_id}/explanation")
+def get_explanation(
+    forecast_id: str,
+    service: ExplanationDep,
+    category: Annotated[str | None, Query()] = None,
+    sku: Annotated[str | None, Query()] = None,
+    store: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    """Return the stored explanation for this forecast."""
 
-    _ = forecast_id
-    raise ApiError(409, "explanations_disabled", EXPLANATIONS_DISABLED)
+    result = service.read(
+        forecast_id,
+        category=_blank_to_none(category),
+        sku=_blank_to_none(sku),
+        store=_blank_to_none(store),
+    )
+    return JSONResponse(status_code=result.status_code, content=result.content)
 
 
 @router.get("/metrics/model-performance", response_model=ModelPerformance)
