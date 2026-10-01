@@ -1,0 +1,55 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the deployment account
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ -z "${AWS_ACCOUNT_ID}" ]; then
+            echo "Set the GitHub variable AWS_ACCOUNT_ID to the account that owns GitHubDeployRole." >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubDeployRole
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.5"
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Build artifacts and deploy dev
+        run: make aws-deploy
+
+      - name: Smoke test
+        run: make aws-smoke

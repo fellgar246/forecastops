@@ -18,6 +18,12 @@ variable "create_oidc_provider" {
   type        = bool
 }
 
+variable "create_deploy_role" {
+  description = "Create GitHubDeployRole. Only one environment in an account should do this."
+  type        = bool
+  default     = true
+}
+
 variable "data_bucket_arn" {
   type = string
 }

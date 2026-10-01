@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data profile-data train-deepar start-pipeline refresh-forecast evaluate-forecasts request-retrain monitor-drift aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data train-deepar start-pipeline refresh-forecast evaluate-forecasts request-retrain monitor-drift aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts aws-smoke
 
 test:
 	uv run pytest
@@ -60,3 +60,6 @@ aws-destroy:
 
 aws-clean-artifacts:
 	./scripts/aws/clean-artifacts.sh
+
+aws-smoke:
+	./scripts/aws/smoke.sh

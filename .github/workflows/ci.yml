@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  quality:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +36,40 @@ jobs:
       - name: Install web dependencies
         run: npm --prefix apps/web ci
 
-      - name: Lint
-        run: make lint
+      - name: Backend lint
+        run: uv run ruff check . && uv run ruff format --check .
 
-      - name: Test
-        run: make test
+      - name: Backend typecheck
+        run: uv run mypy
 
-      - name: Validate infrastructure
+      - name: Backend tests
+        run: uv run pytest apps/api/tests packages/contracts/tests packages/fixtures/tests tests
+
+      - name: ML unit tests
+        run: uv run pytest ml/tests --ignore=ml/tests/test_features.py
+
+      - name: Leakage tests
+        run: uv run pytest ml/tests/test_features.py
+
+      - name: Frontend lint
+        run: npm --prefix apps/web run lint
+
+      - name: Frontend typecheck
+        run: npm --prefix apps/web run typecheck
+
+      - name: Frontend tests
+        run: npm --prefix apps/web test
+
+      - name: Infrastructure format and validate
         run: make aws-plan
+
+      - name: Security scan
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          skip-files: .env.example
+          skip-dirs: .venv,node_modules,.terraform

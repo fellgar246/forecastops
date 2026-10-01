@@ -139,15 +139,39 @@ data "aws_iam_policy_document" "deploy" {
       values   = ["lambda.amazonaws.com", "sagemaker.amazonaws.com"]
     }
   }
+
+  statement {
+    sid = "StartProjectTrainingPipeline"
+    actions = [
+      "sagemaker:CreatePipeline",
+      "sagemaker:DescribePipeline",
+      "sagemaker:StartPipelineExecution",
+      "sagemaker:UpdatePipeline",
+    ]
+    resources = [
+      "arn:aws:sagemaker:${var.aws_region}:*:pipeline/forecastops-training",
+    ]
+  }
+
+  # ListTrainingJobs has no resource-level ARN. The manual workflow counts jobs before it starts one pipeline.
+  statement {
+    sid       = "CountTrainingJobsStartedToday"
+    actions   = ["sagemaker:ListTrainingJobs"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role" "deploy" {
-  name               = "forecastops-${var.environment}-deploy"
+  count = var.create_deploy_role ? 1 : 0
+
+  name               = "GitHubDeployRole"
   assume_role_policy = data.aws_iam_policy_document.github_trust.json
 }
 
 resource "aws_iam_role_policy" "deploy" {
-  name   = "forecastops-${var.environment}-deploy"
-  role   = aws_iam_role.deploy.id
+  count = var.create_deploy_role ? 1 : 0
+
+  name   = "GitHubDeployRole"
+  role   = aws_iam_role.deploy[0].id
   policy = data.aws_iam_policy_document.deploy.json
 }

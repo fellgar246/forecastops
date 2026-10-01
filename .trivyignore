@@ -1,0 +1,5 @@
+# Object storage uses SSE-S3. A customer managed key is not part of this account.
+AVD-AWS-0132
+
+# The API and web images are local development containers.
+AVD-DS-0002

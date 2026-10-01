@@ -57,3 +57,9 @@ variable "create_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "use_packaged_api" {
+  description = "Deploy the packaged HTTP API. The deploy command sets this after it builds the package."
+  type        = bool
+  default     = false
+}

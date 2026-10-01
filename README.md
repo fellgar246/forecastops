@@ -76,4 +76,14 @@ Terraform under `infra/` describes an optional cloud layout. The default `dev` a
 
 `make aws-plan` formats and validates that configuration. It does not create resources. `make aws-deploy` does apply it. Replace the budget alert email, the GitHub repository, and the bucket name prefix before you deploy.
 
+## Delivery
+
+Pull requests run CI. That workflow lints and typechecks the backend, runs the backend tests, runs the ML unit tests and the leakage tests, lints and typechecks the web app, runs the web tests, checks Terraform formatting, validates the infrastructure, and scans the tree with Trivy.
+
+A push to `main` builds the API package, applies `dev`, and calls `GET /health` and `GET /health/aws`. It does not start training or batch inference. `make aws-smoke` is that health check. It stops after those two routes.
+
+Training starts only when someone runs the Train model workflow by hand. A push cannot start it. Run it from `main`, with a dataset version and the path of a training configuration file. The pipeline starts only when `SAGEMAKER_ENABLED`, `TRAINING_ENABLED`, and `AWS_ML_ENABLED` are true. Destroy demo is also manual and destroys the `demo` environment.
+
+Those cloud workflows assume `GitHubDeployRole` with GitHub OpenID Connect. The repository does not store `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`. The `dev` environment creates that role. Apply `dev` once from this machine before the first GitHub deploy, and set `github_repository` to `org/name`. Set the GitHub variable `AWS_ACCOUNT_ID` to the account that owns the role, and `AWS_REGION` when it is not `us-east-1`. For a cloud training run, also set `ARTIFACTS_BUCKET`, `PIPELINE_ROLE_ARN`, and `DEEPAR_ROLE_ARN`. With those flags left unset, the training command stops and does not call the training service.
+
 Decisions are recorded in `docs/adr/`. The runtime layout is described in `docs/architecture/overview.md`.

@@ -37,3 +37,7 @@ output "cognito_user_pool_id" {
 output "cognito_app_client_id" {
   value = module.cognito.app_client_id
 }
+
+output "deploy_role_arn" {
+  value = module.github_oidc.deploy_role_arn
+}

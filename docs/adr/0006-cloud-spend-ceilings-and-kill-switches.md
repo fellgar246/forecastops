@@ -12,7 +12,7 @@ Project ceilings, which are internal targets and not vendor price guarantees:
 - Occasional demonstration use targets at most $5 USD in a month.
 - A temporary showcase has a hard internal target of at most $10 USD in a month.
 
-The infrastructure defines a monthly budget of $5 with alerts at $1, $3, and $5 of actual spend, plus an alert when forecasted spend goes above $5. Training defaults are 2 jobs a day, 45 minutes each, on CPU only. Language-model calls, batch inference jobs, dataset size, and forecast horizon have their own ceilings. `AWS_ML_ENABLED`, `BEDROCK_ENABLED`, and `TRAINING_ENABLED` can be turned off independently. Training is started by an explicit manual workflow, never by an ordinary push to the main branch. Log retention is 7 days in dev and 14 days in demo.
+The infrastructure defines a monthly budget of $5 with alerts at $1, $3, and $5 of actual spend, plus an alert when forecasted spend goes above $5. Training defaults are 2 jobs a day, 45 minutes each, on CPU only. Language-model calls, batch inference jobs, dataset size, and forecast horizon have their own ceilings. `AWS_ML_ENABLED`, `BEDROCK_ENABLED`, and `TRAINING_ENABLED` can be turned off independently. Training is started by an explicit manual workflow, never by an ordinary push to the main branch. That workflow, and the workflows that plan, deploy `dev`, and destroy demo, assume `GitHubDeployRole` with OpenID Connect. A push to the main branch deploys `dev` and checks the health routes. It does not start training. Log retention is 7 days in dev and 14 days in demo.
 
 ## Consequences
 

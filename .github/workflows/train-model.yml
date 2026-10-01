@@ -1,0 +1,64 @@
+name: Train model
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_version:
+        description: Dataset version to train
+        required: true
+        type: string
+      config:
+        description: Repository path of the training configuration JSON
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: train-model
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the deployment account
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          if [ -z "${AWS_ACCOUNT_ID}" ]; then
+            echo "Set the GitHub variable AWS_ACCOUNT_ID to the account that owns GitHubDeployRole." >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubDeployRole
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Start one training pipeline
+        env:
+          SAGEMAKER_ENABLED: ${{ vars.SAGEMAKER_ENABLED }}
+          TRAINING_ENABLED: ${{ vars.TRAINING_ENABLED }}
+          AWS_ML_ENABLED: ${{ vars.AWS_ML_ENABLED }}
+          ARTIFACTS_BUCKET: ${{ vars.ARTIFACTS_BUCKET }}
+          PIPELINE_ROLE_ARN: ${{ vars.PIPELINE_ROLE_ARN }}
+          DEEPAR_ROLE_ARN: ${{ vars.DEEPAR_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: make start-pipeline DATASET_VERSION="${{ inputs.dataset_version }}" GIT_SHA="${{ github.sha }}" CONFIG="${{ inputs.config }}"

@@ -90,6 +90,7 @@ module "lambda_api" {
   role_arn              = module.iam.api_role_arn
   log_group_name        = module.cloudwatch.log_group_name
   environment_variables = local.api_environment
+  use_packaged_api      = var.use_packaged_api
 }
 
 module "api_gateway" {
@@ -128,6 +129,7 @@ module "github_oidc" {
   github_repository    = var.github_repository
   aws_region           = var.aws_region
   create_oidc_provider = var.create_oidc_provider
+  create_deploy_role   = false
   data_bucket_arn      = module.s3.data_bucket_arn
   artifacts_bucket_arn = module.s3.artifacts_bucket_arn
   forecasts_bucket_arn = module.s3.forecasts_bucket_arn
