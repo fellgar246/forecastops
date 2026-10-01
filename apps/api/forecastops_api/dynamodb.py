@@ -25,6 +25,7 @@ from forecastops_api.persistence import (
     RetrainRequestRow,
     TrainingRunRow,
 )
+from forecastops_api.repositories import ExplanationUsageTotals
 from forecastops_api.settings import Settings
 from forecastops_api.tenancy import LOCAL_TENANT, row_tenant_id, stamp_tenant, validate_tenant_id
 
@@ -333,8 +334,24 @@ class DynamoRepository:
     def count_explanation_calls_on(self, day: date) -> int:
         """Return explanation attempts recorded on ``day`` in UTC."""
 
-        return sum(
-            1 for row in self._rows(AIExplanationRow) if as_utc(row.created_at).date() == day
+        return self.explanation_usage_on(day).calls
+
+    def explanation_usage_on(self, day: date) -> ExplanationUsageTotals:
+        """Return explanation attempts and token totals recorded on ``day``."""
+
+        calls = 0
+        input_tokens = 0
+        output_tokens = 0
+        for row in self._rows(AIExplanationRow):
+            if as_utc(row.created_at).date() != day:
+                continue
+            calls += 1
+            input_tokens += row.input_tokens
+            output_tokens += row.output_tokens
+        return ExplanationUsageTotals(
+            calls=calls,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     def latest_forecast_error(self) -> ForecastErrorEvaluationRow | None:

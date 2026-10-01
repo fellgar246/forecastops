@@ -255,6 +255,22 @@ export const dataQualitySchema = z.object({
   ),
 });
 
+export const costSchema = z.object({
+  monthly_budget_usd: z.number(),
+  training_runs_this_month: z.number().int().nonnegative(),
+  explanation_calls_today: z.number().int().nonnegative(),
+  approximate_explanation_tokens: z.number().int().nonnegative(),
+  estimated_spend_usd: z.number().nullable(),
+  spend_note: z.string(),
+  aws_enabled: z.boolean(),
+  aws_ml_enabled: z.boolean(),
+  bedrock_enabled: z.boolean(),
+  sagemaker_enabled: z.boolean(),
+  training_enabled: z.boolean(),
+  online_inference: z.boolean(),
+  last_cleanup_at: z.string().nullable(),
+});
+
 export const awsHealthSchema = z.object({
   aws_enabled: z.boolean(),
   aws_ml_enabled: z.boolean(),
@@ -283,6 +299,7 @@ export const explanationSchema = z.object({
   package: z.record(z.string(), z.unknown()).optional(),
 });
 
+export type CostPosture = z.infer<typeof costSchema>;
 export type Dataset = z.infer<typeof datasetSchema>;
 export type DatasetCatalog = z.infer<typeof catalogSchema>;
 export type TrainingRun = z.infer<typeof trainingRunSchema>;

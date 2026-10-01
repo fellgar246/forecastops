@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     max_batch_inference_jobs_per_day: int = Field(ge=0)
     max_dataset_rows_demo: int = Field(gt=0)
     max_forecast_horizon_days: int = Field(gt=0)
+    # Project ceiling shown on the cost page. This is not an invoice.
+    monthly_budget_usd: float = Field(default=5, gt=0)
+    # Timestamp written by the artifact cleanup command.
+    cost_state_file: Path = Path("var/cost/last_cleanup_at")
 
     random_seed: int
     # PSI above psi_retrain_threshold recommends retraining. PSI above

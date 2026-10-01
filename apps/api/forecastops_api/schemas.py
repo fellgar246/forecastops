@@ -463,6 +463,29 @@ class ConfirmRetrainRequest(BaseModel):
     actor_id: str = Field(min_length=1)
 
 
+class CostResponse(BaseModel):
+    """Budget, usage, and switches for the cost page.
+
+    ``estimated_spend_usd`` is null until a billing API is configured.
+    ``monthly_budget_usd`` is the project ceiling, not an invoice.
+    ``approximate_explanation_tokens`` sums token counts stored on explanation records.
+    """
+
+    monthly_budget_usd: float
+    training_runs_this_month: int
+    explanation_calls_today: int
+    approximate_explanation_tokens: int
+    estimated_spend_usd: float | None
+    spend_note: str
+    aws_enabled: bool
+    aws_ml_enabled: bool
+    bedrock_enabled: bool
+    sagemaker_enabled: bool
+    training_enabled: bool
+    online_inference: bool
+    last_cleanup_at: datetime | None
+
+
 class ExplanationResponse(BaseModel):
     """A validated explanation and the package it was written from."""
 

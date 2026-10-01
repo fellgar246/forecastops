@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from forecastops_api.artifacts import ArtifactStore
 from forecastops_api.auth import Caller, TokenVerifier, authentication_required, local_caller
+from forecastops_api.cost import CostService
 from forecastops_api.dynamodb import DynamoRepository
 from forecastops_api.errors import ApiError
 from forecastops_api.explanations import ExplanationService
@@ -19,6 +20,7 @@ from forecastops_api.schemas import (
     AcceptedJob,
     ApproveRequest,
     ConfirmRetrainRequest,
+    CostResponse,
     DataQualityList,
     DatasetCatalog,
     DatasetCreate,
@@ -157,6 +159,22 @@ def get_monitoring(
 
 
 MonitoringDep = Annotated[MonitoringService, Depends(get_monitoring)]
+
+
+def get_cost(request: Request, repository: RepositoryDep) -> CostService:
+    """Build the cost snapshot for this request."""
+
+    return CostService(repository, request.app.state.settings)
+
+
+CostDep = Annotated[CostService, Depends(get_cost)]
+
+
+@router.get("/cost", response_model=CostResponse)
+def read_cost(service: CostDep) -> CostResponse:
+    """Return the budget, usage, switches, and last cleanup time."""
+
+    return service.snapshot()
 
 
 @router.post("/datasets", status_code=202, response_model=AcceptedJob)

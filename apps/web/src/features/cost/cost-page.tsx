@@ -1,58 +1,105 @@
 "use client";
 
 import { ErrorNotice } from "@/components/error-notice";
+import { KpiCard } from "@/components/kpi-card";
 import { MissingValue } from "@/components/missing-value";
 import { PageHeader } from "@/components/page-header";
-import { useHealth } from "@/lib/api/queries";
+import { useCost } from "@/lib/api/queries";
+import { formatCount, formatDateTime, formatMoney, formatTokens } from "@/lib/format";
+
+const CAPABILITIES = [
+  { key: "aws_enabled", label: "AWS" },
+  { key: "aws_ml_enabled", label: "Cloud training and batch" },
+  { key: "bedrock_enabled", label: "Bedrock" },
+  { key: "sagemaker_enabled", label: "SageMaker" },
+  { key: "training_enabled", label: "Training" },
+  { key: "online_inference", label: "Online inference" },
+] as const;
 
 export function CostPage() {
-  const health = useHealth();
-  if (health.isPending) {
+  const cost = useCost();
+  if (cost.isPending) {
     return (
       <main className="page">
-        <PageHeader title="Cost" description="Which spend limits apply in this environment." />
+        <PageHeader
+          title="Cost"
+          description="Monthly budget, usage, and which cloud capabilities are on."
+        />
         <p className="skeleton-block" aria-hidden="true" />
       </main>
     );
   }
-  if (health.error) {
+  if (cost.error || !cost.data) {
     return (
       <main className="page">
-        <PageHeader title="Cost" description="Which spend limits apply in this environment." />
-        <ErrorNotice error={health.error} onRetry={() => void health.refetch()} />
+        <PageHeader
+          title="Cost"
+          description="Monthly budget, usage, and which cloud capabilities are on."
+        />
+        <ErrorNotice error={cost.error ?? new Error("Cost data is unavailable.")} onRetry={() => void cost.refetch()} />
       </main>
     );
   }
-  const local = health.data?.execution_mode !== "aws";
+  const posture = cost.data;
   return (
     <main className="page">
-      <PageHeader title="Cost" description="Which spend limits apply in this environment." />
-      {local ? (
-        <section className="notice notice-neutral" aria-labelledby="local-cost-title">
-          <h2 id="local-cost-title">Local mode</h2>
-          <p>Cloud spend tracking is inactive.</p>
-        </section>
-      ) : (
-        <p>
-          Billing data is not connected. <MissingValue reason="Billing data is not connected." />
-        </p>
-      )}
+      <PageHeader
+        title="Cost"
+        description="Monthly budget, usage, and which cloud capabilities are on."
+      />
+      <section className="kpi-grid" aria-label="Cost posture">
+        <KpiCard
+          label="Monthly budget"
+          value={formatMoney(posture.monthly_budget_usd)}
+          caption="USD this month"
+        />
+        <KpiCard
+          label="Training runs"
+          value={formatCount(posture.training_runs_this_month)}
+          caption="This UTC month"
+        />
+        <KpiCard
+          label="Explanation calls"
+          value={formatCount(posture.explanation_calls_today)}
+          caption="Today, UTC"
+        />
+        <KpiCard
+          label="Explanation tokens"
+          value={formatTokens(posture.approximate_explanation_tokens)}
+          caption="Approximate total for today"
+        />
+      </section>
       <section className="card">
-        <h2>Limits that still apply</h2>
+        <h2>Estimated spend</h2>
+        <p>
+          {posture.estimated_spend_usd == null ? (
+            <MissingValue reason={posture.spend_note} />
+          ) : (
+            formatMoney(posture.estimated_spend_usd, true)
+          )}
+        </p>
+        <p className="caption">{posture.spend_note}</p>
+      </section>
+      <section className="card">
+        <h2>Cloud capabilities</h2>
         <dl className="meta-list">
-          <div>
-            <dt>Training runs per day</dt>
-            <dd>{health.data?.max_training_jobs_per_day ?? <MissingValue reason="The training limit has not loaded." />}</dd>
-          </div>
-          <div>
-            <dt>Forecast horizon</dt>
-            <dd>
-              {health.data
-                ? `${health.data.max_forecast_horizon_days} days`
-                : <MissingValue reason="The horizon limit has not loaded." />}
-            </dd>
-          </div>
+          {CAPABILITIES.map((item) => (
+            <div key={item.key}>
+              <dt>{item.label}</dt>
+              <dd>{posture[item.key] ? "On" : "Off"}</dd>
+            </div>
+          ))}
         </dl>
+      </section>
+      <section className="card">
+        <h2>Last cleanup</h2>
+        <p>
+          {posture.last_cleanup_at ? (
+            formatDateTime(posture.last_cleanup_at)
+          ) : (
+            <MissingValue reason="No cleanup has been recorded." />
+          )}
+        </p>
       </section>
     </main>
   );

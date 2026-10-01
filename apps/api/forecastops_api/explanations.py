@@ -2,7 +2,7 @@
 
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -11,12 +11,18 @@ from uuid import uuid4
 
 import structlog
 
-from forecastops_api.errors import ErrorBody
+from forecastops_api.errors import ApiError, ErrorBody
 from forecastops_api.observability import (
     record_explanation_usage,
     record_explanation_validation_failure,
 )
 from forecastops_api.persistence import AIExplanationRow, ForecastRunRow, ModelVersionRow
+from forecastops_api.quotas import (
+    require_bedrock_provider,
+    require_explanation_calls,
+    require_explanation_input_tokens,
+    require_explanation_output_tokens,
+)
 from forecastops_api.repositories import MetadataRepository
 from forecastops_api.schemas import ExplanationResponse, ExplanationSignal
 from forecastops_api.series import Observation, SeriesPoint, assemble_series, point_matches
@@ -34,10 +40,9 @@ from forecastops_ml.explanations import (
     select_explanation_client,
     validate_explanation,
 )
-from forecastops_ml.explanations.clients import estimate_tokens
+from forecastops_ml.explanations.clients import BedrockExplanationClient, estimate_tokens
 
 EXPLANATIONS_DISABLED = "Explanations are not enabled."
-_RESET = "00:00 UTC"
 
 
 @dataclass(frozen=True)
@@ -88,15 +93,31 @@ class ExplanationService:
         if cached is not None:
             self._log(cached, cache_hit=True, accepted=True)
             return ExplanationResult(200, _present(cached))
-        if self._over_daily_limit():
-            return self._quota("calls")
+        denied = self._guard(
+            lambda: require_explanation_calls(
+                self._settings,
+                self._repository.count_explanation_calls_on(datetime.now(UTC).date()),
+            )
+        )
+        if denied is not None:
+            return denied
         try:
             package = self._package(forecast, scope, category=category, store=store, sku=sku)
         except _PackageError as exc:
             return _error(422, "explanation_unavailable", str(exc))
-        if estimate_tokens(render_prompt(package)) > self._settings.max_bedrock_input_tokens:
-            return self._quota("input")
+        denied = self._guard(
+            lambda: require_explanation_input_tokens(
+                self._settings,
+                estimate_tokens(render_prompt(package)),
+            )
+        )
+        if denied is not None:
+            return denied
         client = self._adapter()
+        if isinstance(client, BedrockExplanationClient):
+            denied = self._guard(lambda: require_bedrock_provider(self._settings))
+            if denied is not None:
+                return denied
         try:
             draft = client.explain(package)
         except ExplanationValidationError as exc:
@@ -115,14 +136,20 @@ class ExplanationService:
             )
             raise
         usage = client.usage
-        if usage.input_tokens > self._settings.max_bedrock_input_tokens:
+        denied = self._guard(
+            lambda: require_explanation_input_tokens(self._settings, usage.input_tokens)
+        )
+        if denied is not None:
             self._record(forecast.id, scope, key, client, package, draft=None, status="invalid")
             self._log_usage(forecast.id, client, cache_hit=False, accepted=False)
-            return self._quota("input")
-        if usage.output_tokens > self._settings.max_bedrock_output_tokens:
+            return denied
+        denied = self._guard(
+            lambda: require_explanation_output_tokens(self._settings, usage.output_tokens)
+        )
+        if denied is not None:
             self._record(forecast.id, scope, key, client, package, draft=None, status="invalid")
             self._log_usage(forecast.id, client, cache_hit=False, accepted=False)
-            return self._quota("output")
+            return denied
         try:
             validate_explanation(package, draft)
         except ExplanationValidationError as exc:
@@ -167,32 +194,17 @@ class ExplanationService:
             region=self._settings.aws_region,
         )
 
-    def _over_daily_limit(self) -> bool:
-        used = self._repository.count_explanation_calls_on(datetime.now(UTC).date())
-        return used >= self._settings.max_bedrock_calls_per_day
-
-    def _quota(self, kind: str) -> ExplanationResult:
-        limit = {
-            "calls": self._settings.max_bedrock_calls_per_day,
-            "input": self._settings.max_bedrock_input_tokens,
-            "output": self._settings.max_bedrock_output_tokens,
-        }[kind]
-        if kind == "calls":
-            message = (
-                f"The daily explanation limit of {limit} calls has been reached. "
-                f"It resets at {_RESET}."
+    def _guard(self, check: Callable[[], None]) -> ExplanationResult | None:
+        try:
+            check()
+        except ApiError as exc:
+            return _error(
+                exc.status_code,
+                exc.body.code,
+                exc.body.message,
+                dict(exc.body.details),
             )
-        elif kind == "input":
-            message = (
-                f"The explanation exceeds the input token ceiling of {limit}. "
-                f"It resets at {_RESET}."
-            )
-        else:
-            message = (
-                f"The explanation exceeds the output token ceiling of {limit}. "
-                f"It resets at {_RESET}."
-            )
-        return _error(429, "explanation_quota", message)
+        return None
 
     def _package(
         self,

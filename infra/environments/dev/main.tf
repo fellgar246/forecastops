@@ -18,6 +18,7 @@ locals {
     MAX_BATCH_INFERENCE_JOBS_PER_DAY = "5"
     MAX_DATASET_ROWS_DEMO            = "2000000"
     MAX_FORECAST_HORIZON_DAYS        = "90"
+    MONTHLY_BUDGET_USD               = "5"
     RANDOM_SEED                      = "20260921"
     METADATA_TABLE_NAME              = module.dynamodb.table_name
     ARTIFACTS_BUCKET                 = module.s3.artifacts_bucket_name

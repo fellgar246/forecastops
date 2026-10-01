@@ -24,6 +24,16 @@ from forecastops_api.persistence import (
     PromotionDecisionRow,
     TrainingRunRow,
 )
+from forecastops_api.quotas import (
+    cloud_batch_requested,
+    require_aws_ml,
+    require_batch_capacity,
+    require_cpu_training,
+    require_dataset_rows,
+    require_forecast_horizon,
+    require_training_capacity,
+    require_training_enabled,
+)
 from forecastops_api.repositories import MetadataRepository
 from forecastops_api.runner import LocalJobRunner
 from forecastops_api.schemas import (
@@ -59,7 +69,7 @@ from forecastops_api.settings import ExecutionMode, Settings
 from forecastops_contracts import SCHEMA_VERSION
 from forecastops_ml.data import load_dataset, validate_dataset
 from forecastops_ml.data.quality import ValidationConfig, unexpected_category_count
-from forecastops_ml.inference import BatchCapacityError, BatchInference, admit_forecast
+from forecastops_ml.inference import BatchInference
 from forecastops_ml.promotion.models import ModelStatus, RegistryStatus
 from forecastops_ml.registry import (
     ForecastSelectionError,
@@ -91,6 +101,7 @@ class ForecastService:
         self._artifacts = artifacts
         self._registry = registry
         self._runner = LocalJobRunner(repository, artifacts)
+        self._batch = batch
         self._forecasts = ForecastExecutor(repository, artifacts, batch, predictor)
 
     def register_dataset(self, body: DatasetCreate) -> DatasetRow:
@@ -104,6 +115,7 @@ class ForecastService:
         except ValueError as exc:
             raise ApiError(422, "invalid_dataset", str(exc)) from exc
         dates = [value for value in frame.column("date").to_pylist() if isinstance(value, date)]
+        require_dataset_rows(self._settings, frame.num_rows)
         row = DatasetRow(
             id=str(uuid4()),
             name=body.name,
@@ -200,14 +212,21 @@ class ForecastService:
     def start_training(self, body: TrainingCreate) -> TrainingRunRow:
         """Queue a training run and execute it in this process."""
 
-        if not self._settings.training_enabled:
-            raise ApiError(409, "training_disabled", "Training is disabled.")
+        require_training_enabled(self._settings)
+        require_cpu_training(self._settings, body.configuration)
         if body.model_family in _CLOUD_FAMILIES:
+            require_aws_ml(self._settings)
             raise ApiError(
                 409,
                 "cloud_model_unavailable",
                 f"{body.model_family} training is not enabled in the local profile.",
             )
+        started_today = sum(
+            1
+            for row in self._repository.list_training_runs()
+            if _utc(row.created_at).date() == _now().date()
+        )
+        require_training_capacity(self._settings, started_today)
         dataset = _require_dataset(self._repository, body.dataset_id)
         if dataset.status != "valid":
             raise ApiError(409, "dataset_not_valid", "Train only a dataset whose status is valid.")
@@ -340,6 +359,13 @@ class ForecastService:
         self._require_forecastable(model)
         dataset_id = body.dataset_id or model.dataset_id
         dataset = _require_dataset(self._repository, dataset_id)
+        if cloud_batch_requested(
+            model_family=model.model_family,
+            batch_configured=self._batch is not None,
+            execution_mode=self._settings.execution_mode,
+            sagemaker_enabled=self._settings.sagemaker_enabled,
+        ):
+            require_aws_ml(self._settings)
         self._require_batch_capacity()
         forecast = ForecastRunRow(
             id=str(uuid4()),
@@ -647,28 +673,12 @@ class ForecastService:
         )
 
     def _require_batch_capacity(self) -> None:
-        limit = self._settings.max_batch_inference_jobs_per_day
         started = self._repository.count_forecasts_created_on(_now().date())
-        try:
-            admit_forecast(jobs_started_today=started, daily_limit=limit, replay=False)
-        except BatchCapacityError as exc:
-            raise ApiError(
-                429,
-                "batch_inference_limit",
-                str(exc),
-                {"max_batch_inference_jobs_per_day": limit},
-            ) from exc
+        require_batch_capacity(self._settings, started)
 
     def _require_horizon(self, horizon: int, granularity: str) -> None:
         days = horizon * 7 if granularity == "week" else horizon
-        limit = self._settings.max_forecast_horizon_days
-        if days > limit:
-            raise ApiError(
-                422,
-                "horizon_too_long",
-                f"Forecast horizon cannot exceed {limit} days.",
-                {"horizon_days": days, "max_forecast_horizon_days": limit},
-            )
+        require_forecast_horizon(self._settings, days)
 
 
 def _idempotency_key(value: str | None) -> str | None:
@@ -808,3 +818,9 @@ def _require_model(repository: MetadataRepository, model_id: str) -> ModelVersio
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

@@ -151,6 +151,8 @@ def select_batch_inference(settings: Settings) -> BatchInference | None:
     instead of creating an endpoint.
     """
 
+    if not settings.aws_ml_enabled:
+        return None
     if settings.execution_mode is not ExecutionMode.AWS or not settings.sagemaker_enabled:
         return None
     if settings.online_inference:

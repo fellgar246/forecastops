@@ -6,6 +6,7 @@ import {
   dataQuality,
   getAwsHealth,
   getCatalog,
+  getCost,
   getExplanation,
   getForecast,
   getForecastSeries,
@@ -34,6 +35,10 @@ export function useHealth() {
 
 export function useAwsHealth() {
   return useQuery({ queryKey: ["health-aws"], queryFn: getAwsHealth });
+}
+
+export function useCost() {
+  return useQuery({ queryKey: ["cost"], queryFn: getCost });
 }
 
 export function useDatasets() {

@@ -6,6 +6,7 @@ import {
   acceptedJobSchema,
   awsHealthSchema,
   catalogSchema,
+  costSchema,
   dataQualitySchema,
   datasetListSchema,
   datasetSchema,
@@ -121,6 +122,10 @@ export function getHealth(): Promise<HealthResponse> {
 
 export function getAwsHealth() {
   return send("/health/aws").then((response) => parse(response, awsHealthSchema));
+}
+
+export function getCost() {
+  return send("/cost").then((response) => parse(response, costSchema));
 }
 
 export function listDatasets() {

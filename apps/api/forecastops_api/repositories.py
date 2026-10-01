@@ -5,6 +5,7 @@ The cloud control plane stores the same documents through a DynamoDB adapter tha
 implements :class:`MetadataRepository`.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
@@ -24,6 +25,15 @@ from forecastops_api.persistence import (
     TrainingRunRow,
 )
 from forecastops_api.tenancy import LOCAL_TENANT, stamp_tenant, validate_tenant_id
+
+
+@dataclass(frozen=True)
+class ExplanationUsageTotals:
+    """Explanation attempts and token totals for one UTC day."""
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
 
 
 class Repository:
@@ -250,12 +260,26 @@ class Repository:
     def count_explanation_calls_on(self, day: date) -> int:
         """Return explanation attempts recorded on ``day`` in UTC."""
 
+        return self.explanation_usage_on(day).calls
+
+    def explanation_usage_on(self, day: date) -> ExplanationUsageTotals:
+        """Return explanation attempts and token totals recorded on ``day``."""
+
         statement = select(AIExplanationRow).where(AIExplanationRow.tenant_id == self._tenant_id)
-        total = 0
+        calls = 0
+        input_tokens = 0
+        output_tokens = 0
         for row in self._session.scalars(statement):
-            if _utc(row.created_at).date() == day:
-                total += 1
-        return total
+            if _utc(row.created_at).date() != day:
+                continue
+            calls += 1
+            input_tokens += row.input_tokens
+            output_tokens += row.output_tokens
+        return ExplanationUsageTotals(
+            calls=calls,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
     def latest_forecast_error(self) -> ForecastErrorEvaluationRow | None:
         """Return the newest forecast-error score."""
@@ -386,6 +410,7 @@ class MetadataRepository(Protocol):
         scope_key: str,
     ) -> AIExplanationRow | None: ...
     def count_explanation_calls_on(self, day: date) -> int: ...
+    def explanation_usage_on(self, day: date) -> ExplanationUsageTotals: ...
     def latest_forecast_error(self) -> ForecastErrorEvaluationRow | None: ...
     def latest_monitoring_report(self) -> MonitoringReportRow | None: ...
     def latest_succeeded_forecast(self) -> ForecastRunRow | None: ...

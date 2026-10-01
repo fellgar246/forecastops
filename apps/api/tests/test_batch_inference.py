@@ -46,12 +46,24 @@ def test_selector_stays_closed_unless_cloud_execution_and_sagemaker_are_on(
     assert select_batch_inference(_settings(monkeypatch)) is None
     assert constructed == []
 
+    closed = select_batch_inference(
+        _settings(
+            monkeypatch,
+            execution_mode="aws",
+            sagemaker_enabled=True,
+            aws_ml_enabled=False,
+        )
+    )
+    assert closed is None
+    assert constructed == []
+
     refusing = select_batch_inference(
         _settings(
             monkeypatch,
             execution_mode="aws",
             sagemaker_enabled=True,
             online_inference=True,
+            aws_ml_enabled=True,
         )
     )
     assert isinstance(refusing, BatchInference)
@@ -163,6 +175,7 @@ def test_cloud_deepar_forecast_reads_the_batch_artifact(tmp_path: Path) -> None:
             "execution_mode": ExecutionMode.AWS,
             "sagemaker_enabled": True,
             "online_inference": False,
+            "aws_ml_enabled": True,
         }
     )
     dataset_id = _valid_dataset(client, tmp_path / "data")
@@ -371,6 +384,7 @@ def _settings(
     execution_mode: str = "local",
     sagemaker_enabled: bool = False,
     online_inference: bool = False,
+    aws_ml_enabled: bool = False,
 ) -> Settings:
     from envfile import ROOT, parse_env_file
 
@@ -383,5 +397,6 @@ def _settings(
         monkeypatch.setenv("COGNITO_APP_CLIENT_ID", "test-client")
     monkeypatch.setenv("SAGEMAKER_ENABLED", "true" if sagemaker_enabled else "false")
     monkeypatch.setenv("ONLINE_INFERENCE", "true" if online_inference else "false")
+    monkeypatch.setenv("AWS_ML_ENABLED", "true" if aws_ml_enabled else "false")
     monkeypatch.setenv("ARTIFACTS_BUCKET", "forecastops-artifacts")
     return Settings(_env_file=None)

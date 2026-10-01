@@ -31,3 +31,13 @@ aws_name_prefix() {
 aws_prepare_cli() {
   export AWS_DEFAULT_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 }
+
+# Record the time of a finished cleanup so the cost page can show it.
+record_cleanup_stamp() {
+  local root="$1"
+  local stamp
+  stamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  mkdir -p "${root}/var/cost"
+  printf '%s\n' "${stamp}" > "${root}/var/cost/last_cleanup_at"
+  echo "Recorded last cleanup at ${stamp}"
+}

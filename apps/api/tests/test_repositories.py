@@ -242,6 +242,10 @@ def test_explanations_errors_monitoring_and_retrain(adapter: _Adapter) -> None:
     assert latest is not None
     assert latest.id == "e2"
     assert fresh.count_explanation_calls_on(_at(1).date()) == 3
+    usage = fresh.explanation_usage_on(_at(1).date())
+    assert usage.calls == 3
+    assert usage.input_tokens == 30
+    assert usage.output_tokens == 60
     scored = fresh.latest_forecast_error()
     assert scored is not None
     assert scored.wape == 0.18

@@ -32,3 +32,5 @@ for bucket in "${buckets[@]}"; do
     rm -f "${payload}"
   done <<< "${batches}"
 done
+
+record_cleanup_stamp "${root}"

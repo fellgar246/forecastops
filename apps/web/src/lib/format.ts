@@ -80,6 +80,25 @@ export function formatTokens(value: number | null | undefined): string {
   return `${numberFormat.format(Math.round(value))} tokens`;
 }
 
+export function formatDateTime(value: Date | string | null | undefined): string {
+  if (value == null || value === "") {
+    return MISSING_MARK;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return MISSING_MARK;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(date);
+}
+
 export function formatDate(value: Date | string | null | undefined): string {
   if (value == null || value === "") {
     return MISSING_MARK;

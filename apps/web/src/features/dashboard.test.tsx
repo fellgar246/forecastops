@@ -31,6 +31,22 @@ const aws = {
   online_inference: false,
 };
 
+const costOff = {
+  monthly_budget_usd: 5,
+  training_runs_this_month: 0,
+  explanation_calls_today: 0,
+  approximate_explanation_tokens: 0,
+  estimated_spend_usd: null,
+  spend_note: "Billing is not configured.",
+  aws_enabled: false,
+  aws_ml_enabled: false,
+  bedrock_enabled: false,
+  sagemaker_enabled: false,
+  training_enabled: true,
+  online_inference: false,
+  last_cleanup_at: null,
+};
+
 const metrics = {
   row_count: 8,
   mae: 1.2,
@@ -85,6 +101,7 @@ test("pages explain what is missing when nothing is registered", async () => {
   mockFetch((url) => {
     if (url.pathname === "/health") return jsonResponse(health);
     if (url.pathname === "/health/aws") return jsonResponse(aws);
+    if (url.pathname === "/cost") return jsonResponse(costOff);
     return jsonResponse({ items: [] });
   });
 
@@ -103,8 +120,42 @@ test("pages explain what is missing when nothing is registered", async () => {
     view.unmount();
   }
   const cost = renderPage(<CostPage />);
-  expect(await screen.findByText("Cloud spend tracking is inactive.")).toBeVisible();
+  expect(await screen.findByText("$5.00")).toBeVisible();
+  expect(screen.getAllByText("Billing is not configured.").length).toBeGreaterThan(0);
+  expect(screen.getByText("Bedrock").closest("div")).toHaveTextContent("Off");
+  expect(screen.getByText("Training").closest("div")).toHaveTextContent("On");
+  expect(screen.getByText("No cleanup has been recorded.")).toBeVisible();
   cost.unmount();
+});
+
+test("cost page shows usage when cloud capabilities are on", async () => {
+  mockFetch((url) => {
+    if (url.pathname === "/cost") {
+      return jsonResponse({
+        ...costOff,
+        training_runs_this_month: 2,
+        explanation_calls_today: 4,
+        approximate_explanation_tokens: 1280,
+        aws_enabled: true,
+        aws_ml_enabled: true,
+        bedrock_enabled: true,
+        sagemaker_enabled: true,
+        training_enabled: true,
+        online_inference: false,
+        last_cleanup_at: "2026-09-30T16:05:00Z",
+      });
+    }
+    return jsonResponse({ items: [] });
+  });
+
+  renderPage(<CostPage />);
+  expect(await screen.findByText("2")).toBeVisible();
+  expect(screen.getByText("4")).toBeVisible();
+  expect(screen.getByText("1,280 tokens")).toBeVisible();
+  expect(screen.getByText("Bedrock").closest("div")).toHaveTextContent("On");
+  expect(screen.getByText("Online inference").closest("div")).toHaveTextContent("Off");
+  expect(screen.getByText("Sep 30, 2026, 4:05 PM UTC")).toBeVisible();
+  expect(screen.getAllByText("Billing is not configured.").length).toBeGreaterThan(0);
 });
 
 test("overview shows the production snapshot from the API", async () => {

@@ -23,6 +23,7 @@ locals {
   routes = toset([
     "GET /health",
     "GET /health/aws",
+    "GET /cost",
     "GET /metrics",
     "POST /datasets",
     "POST /datasets/uploads",

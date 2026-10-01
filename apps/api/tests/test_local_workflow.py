@@ -14,6 +14,7 @@ from forecastops_ml.data.synthetic import DEFAULT_MAX_ROWS, DEFAULT_SEED, genera
 ROUTES = {
     "/health",
     "/health/aws",
+    "/cost",
     "/datasets",
     "/datasets/{dataset_id}",
     "/datasets/{dataset_id}/validate",
