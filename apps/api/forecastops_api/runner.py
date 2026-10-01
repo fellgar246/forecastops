@@ -5,17 +5,20 @@ They do not import a cloud SDK. Forecast runs are executed by the forecast worke
 """
 
 import json
+import time
 from datetime import UTC, datetime
 
 import pyarrow as pa
+import structlog
 
 from forecastops_api.artifacts import ArtifactStore
+from forecastops_api.observability import record_metric, record_model_metrics
 from forecastops_api.persistence import (
     ModelVersionRow,
     PromotionDecisionRow,
     TrainingRunRow,
 )
-from forecastops_api.repositories import Repository
+from forecastops_api.repositories import MetadataRepository
 from forecastops_ml.baselines.catalog import local_catalog
 from forecastops_ml.evaluation.backtest import (
     Backtester,
@@ -34,17 +37,20 @@ _DEFAULT_HORIZON = 7
 class LocalJobRunner:
     """Move training and forecast rows through their statuses."""
 
-    def __init__(self, repository: Repository, artifacts: ArtifactStore) -> None:
+    def __init__(self, repository: MetadataRepository, artifacts: ArtifactStore) -> None:
         self._repository = repository
         self._artifacts = artifacts
 
     def train(self, run: TrainingRunRow, frame: pa.Table) -> ModelVersionRow | None:
         """Fit, score, and register ``run``. Return the model, or none on failure."""
 
+        started = time.perf_counter()
+        record_metric("training_job_count", 1)
         self._training_status(run, "PREPROCESSING", started=True)
         if run.model_family not in _LOCAL_FAMILIES:
             message = f"{run.model_family} is not available in the local profile."
             self._fail_training(run, message)
+            self._observe_training(run, started, failed=True)
             return None
         folds = _positive_int(run.configuration.get("folds"), _DEFAULT_FOLDS)
         horizon = _positive_int(run.configuration.get("horizon"), _DEFAULT_HORIZON)
@@ -61,6 +67,7 @@ class LocalJobRunner:
             )
         except (UnscoredModelError, ValueError) as exc:
             self._fail_training(run, str(exc))
+            self._observe_training(run, started, failed=True)
             return None
 
         self._training_status(run, "REGISTERING")
@@ -108,7 +115,46 @@ class LocalJobRunner:
         )
         self._repository.save()
         self._training_status(run, "COMPLETED", finished=True)
+        self._observe_training(
+            run,
+            started,
+            failed=False,
+            model=model,
+            report=report,
+            horizon=horizon,
+        )
         return model
+
+    def _observe_training(
+        self,
+        run: TrainingRunRow,
+        started: float,
+        *,
+        failed: bool,
+        model: ModelVersionRow | None = None,
+        report: EvaluationReport | None = None,
+        horizon: int | None = None,
+    ) -> None:
+        duration = time.perf_counter() - started
+        record_metric("training_duration_seconds", duration)
+        if failed:
+            record_metric("training_failures", 1)
+        if model is not None and report is not None and horizon is not None:
+            record_model_metrics(
+                model_version=model.version,
+                forecast_horizon=horizon,
+                report=report,
+                p90_coverage=_coverage(model),
+            )
+        structlog.get_logger().info(
+            "training.finished",
+            training_run_id=run.id,
+            dataset_id=run.dataset_id,
+            model_version_id=None if model is None else model.id,
+            status=run.status,
+            artifact_uri=run.artifact_uri,
+            duration_seconds=round(duration, 3),
+        )
 
     def _decide(
         self,
@@ -181,6 +227,16 @@ class LocalJobRunner:
             f"{run.id}/evaluation.json",
             document.encode("utf-8"),
         )
+
+
+def _coverage(model: ModelVersionRow) -> float | None:
+    metrics = model.metrics
+    if not isinstance(metrics, dict):
+        return None
+    value = metrics.get("p90_coverage")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
 
 
 def _baseline_may_wait(

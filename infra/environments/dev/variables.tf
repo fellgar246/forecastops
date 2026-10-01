@@ -46,6 +46,12 @@ variable "enable_schedules" {
   default     = false
 }
 
+variable "enable_alarm_notifications" {
+  description = "Subscribe operational alarms. Stays false until the demo environment should send notifications."
+  type        = bool
+  default     = false
+}
+
 variable "create_oidc_provider" {
   description = "Create the account-wide GitHub OIDC provider from this environment."
   type        = bool

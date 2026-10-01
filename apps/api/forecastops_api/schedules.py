@@ -16,7 +16,7 @@ from forecastops_api.persistence import (
     ForecastPointRow,
     RetrainRequestRow,
 )
-from forecastops_api.repositories import Repository
+from forecastops_api.repositories import MetadataRepository
 from forecastops_api.schemas import (
     ForecastCreate,
     ForecastErrorEvaluationResponse,
@@ -41,7 +41,7 @@ DAILY_HORIZON_DAYS = 7
 class ScheduleService:
     """Run the three clocks against the forecast service."""
 
-    def __init__(self, forecasts: ForecastService, repository: Repository) -> None:
+    def __init__(self, forecasts: ForecastService, repository: MetadataRepository) -> None:
         self._forecasts = forecasts
         self._repository = repository
 

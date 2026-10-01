@@ -18,9 +18,9 @@ docker compose up --build
 - Web app: http://localhost:3000
 - API health: http://localhost:8000/health
 
-The web app opens on Overview. From there you can register a dataset, validate it, train a local model, approve it, and open a forecast. Cost reports local mode and does not track cloud spend.
+The web app opens on Overview. From there you can register a dataset, validate it, train a local model, approve it, and open a forecast. Cost reports local mode and does not track cloud spend. Local mode hides the sign-in form. Set `NEXT_PUBLIC_AUTH_ENABLED=true` and the Cognito client id only when the API is checking access tokens.
 
-`GET /health` returns `healthy` with `execution_mode=local` and the AWS, Bedrock, and SageMaker flags set to false.
+`GET /health` returns `healthy` with `execution_mode=local` and the AWS, Bedrock, and SageMaker flags set to false. Each response carries `X-Correlation-Id`. `GET /metrics` returns the same metric names the process writes to its JSON logs.
 
 Quality checks:
 
@@ -66,12 +66,14 @@ make profile-data OUT=data/synthetic
 
 `make refresh-forecast`, `make evaluate-forecasts`, and `make request-retrain` run the daily, weekly, and monthly operations on this machine. They do not call a cloud scheduler. The monthly command records a retrain request and waits. Confirming that request starts training and does not promote the model. How to turn the cloud clocks on for a showcase, and off again, is in `docs/architecture/overview.md`.
 
-`make aws-deploy`, `make aws-status`, `make aws-cost-check`, `make aws-destroy`, and `make aws-clean-artifacts` are reserved and do not call cloud APIs.
+`make monitor-drift` compares the latest 28 days with the training baseline and stores a report. `GET /metrics/model-performance` returns that report with the model scores. The status is `HEALTHY`, `WARNING`, or `RETRAIN_RECOMMENDED`. A recommendation opens a retrain request and does not start training or approve a model. PSI above `0.2`, WAPE more than 20% worse than the approved model, or a dataset whose `date_max` is more than 30 days before the report date recommends retraining. The thresholds are in `.env.example`.
+
+`make aws-deploy` packages the API and applies the `dev` environment. Set `ENV=demo` to apply demo instead. `make aws-status` prints that environment's outputs. `make aws-cost-check` reports the monthly budget alarms and does not start training. `make aws-destroy` destroys the disposable resources. `make aws-clean-artifacts` deletes leftover object versions in the data, artifacts, and forecasts buckets. Run it before destroying again when those buckets still hold objects. `NAME_PREFIX` selects the bucket names and defaults to `forecastops`.
 
 ## Cloud profile
 
-Terraform under `infra/` describes an optional cloud layout. The default `dev` and `demo` environments leave serverless endpoints, Bedrock, and schedules off, and they declare no training job, real-time endpoint, or notebook. A cloud `deepar` forecast uses batch transform rather than an endpoint. `ONLINE_INFERENCE` stays false. Object storage in that layout blocks public access, encrypts objects, and expires non-current versions. A monthly budget of $5 alerts at $1, $3, and $5, plus when forecasted spend exceeds $5.
+Terraform under `infra/` describes an optional cloud layout. The default `dev` and `demo` environments leave serverless endpoints, Bedrock, and schedules off, and they declare no training job, real-time endpoint, or notebook. Cloud mode adds a Cognito user pool. The API checks access tokens and keeps each organization's rows and objects under `tenant/{tenant_id}/`. A cloud `deepar` forecast uses batch transform rather than an endpoint. `ONLINE_INFERENCE` stays false. Object storage in that layout blocks public access, encrypts objects, and expires non-current versions. A monthly budget of $5 alerts at $1, $3, and $5, plus when forecasted spend exceeds $5.
 
-`make aws-plan` formats and validates that configuration. It does not create resources. Do not apply it until the budget email, GitHub repository, and bucket name prefix in the environment variables are yours.
+`make aws-plan` formats and validates that configuration. It does not create resources. `make aws-deploy` does apply it. Replace the budget alert email, the GitHub repository, and the bucket name prefix before you deploy.
 
 Decisions are recorded in `docs/adr/`. The runtime layout is described in `docs/architecture/overview.md`.

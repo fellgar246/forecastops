@@ -12,8 +12,12 @@ from uuid import uuid4
 import structlog
 
 from forecastops_api.errors import ErrorBody
+from forecastops_api.observability import (
+    record_explanation_usage,
+    record_explanation_validation_failure,
+)
 from forecastops_api.persistence import AIExplanationRow, ForecastRunRow, ModelVersionRow
-from forecastops_api.repositories import Repository
+from forecastops_api.repositories import MetadataRepository
 from forecastops_api.schemas import ExplanationResponse, ExplanationSignal
 from forecastops_api.series import Observation, SeriesPoint, assemble_series, point_matches
 from forecastops_api.settings import Settings
@@ -49,7 +53,7 @@ class ExplanationService:
 
     def __init__(
         self,
-        repository: Repository,
+        repository: MetadataRepository,
         settings: Settings,
         client: ExplanationClient | None = None,
     ) -> None:
@@ -100,6 +104,16 @@ class ExplanationService:
             self._log_usage(forecast.id, client, cache_hit=False, accepted=False)
             _log_validation(forecast.id, exc)
             return _invalid(exc)
+        except Exception:
+            # Provider failures are not one exception type. Count the call, then surface it.
+            record_explanation_usage(
+                input_tokens=client.usage.input_tokens,
+                output_tokens=client.usage.output_tokens,
+                latency_ms=client.usage.latency_ms,
+                cache_hit=False,
+                provider_failed=True,
+            )
+            raise
         usage = client.usage
         if usage.input_tokens > self._settings.max_bedrock_input_tokens:
             self._record(forecast.id, scope, key, client, package, draft=None, status="invalid")
@@ -279,6 +293,13 @@ class ExplanationService:
         return row
 
     def _log(self, row: AIExplanationRow, *, cache_hit: bool, accepted: bool) -> None:
+        record_explanation_usage(
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            latency_ms=row.latency_ms,
+            cache_hit=cache_hit,
+            provider_failed=False,
+        )
         structlog.get_logger().info(
             "explanation.completed",
             forecast_run_id=row.forecast_run_id,
@@ -300,6 +321,13 @@ class ExplanationService:
         accepted: bool,
     ) -> None:
         usage = client.usage
+        record_explanation_usage(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            latency_ms=usage.latency_ms,
+            cache_hit=cache_hit,
+            provider_failed=False,
+        )
         structlog.get_logger().info(
             "explanation.completed",
             forecast_run_id=forecast_id,
@@ -465,6 +493,7 @@ def _invalid(exc: ExplanationValidationError) -> ExplanationResult:
 
 
 def _log_validation(forecast_id: str, exc: ExplanationValidationError) -> None:
+    record_explanation_validation_failure()
     structlog.get_logger().info(
         "explanation.validation_failed",
         forecast_run_id=forecast_id,

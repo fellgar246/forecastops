@@ -9,3 +9,15 @@ output "artifacts_bucket_arn" {
 output "forecasts_bucket_arn" {
   value = aws_s3_bucket.this["forecasts"].arn
 }
+
+output "data_bucket_name" {
+  value = aws_s3_bucket.this["data"].id
+}
+
+output "artifacts_bucket_name" {
+  value = aws_s3_bucket.this["artifacts"].id
+}
+
+output "forecasts_bucket_name" {
+  value = aws_s3_bucket.this["forecasts"].id
+}

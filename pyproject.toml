@@ -59,6 +59,8 @@ warn_unused_ignores = true
 module = [
   "boto3",
   "boto3.*",
+  "mangum",
+  "mangum.*",
   "lightgbm",
   "lightgbm.*",
   "pyarrow",

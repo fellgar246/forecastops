@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import { ZodError } from "zod";
+import { authEnabled, readAccessToken } from "@/lib/auth";
 import { healthResponseSchema, type HealthResponse } from "@/lib/health";
 import {
   acceptedJobSchema,
@@ -91,12 +92,24 @@ async function parse<T>(response: Response, schema: ZodType<T>): Promise<T> {
   return parsed.data;
 }
 
+function authorizationHeader(): Record<string, string> {
+  if (!authEnabled()) {
+    return {};
+  }
+  const token = readAccessToken();
+  if (!token) {
+    return {};
+  }
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function send(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${apiBaseUrl()}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...authorizationHeader(),
       ...init?.headers,
     },
   });

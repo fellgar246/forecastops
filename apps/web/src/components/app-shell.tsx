@@ -16,7 +16,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { EnvironmentChip } from "@/components/environment-chip";
+import { SignInForm } from "@/components/sign-in-form";
 import { useModels, useTrainingRuns } from "@/lib/api/queries";
+import { authEnabled, clearAccessToken, readAccessToken } from "@/lib/auth";
 
 type Item = {
   href: string;
@@ -64,6 +66,33 @@ function active(pathname: string, href: string): boolean {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => readAccessToken());
+  if (authEnabled() && !token) {
+    return (
+      <SignInForm
+        onSignedIn={() => {
+          setToken(readAccessToken());
+        }}
+      />
+    );
+  }
+  return (
+    <SignedInShell
+      onSignOut={
+        authEnabled()
+          ? () => {
+              clearAccessToken();
+              setToken(null);
+            }
+          : undefined
+      }
+    >
+      {children}
+    </SignedInShell>
+  );
+}
+
+function SignedInShell({ children, onSignOut }: { children: ReactNode; onSignOut?: () => void }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const models = useModels();
@@ -112,6 +141,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-footer">
+          {onSignOut ? (
+            <button type="button" className="btn btn-ghost" onClick={onSignOut}>
+              Sign out
+            </button>
+          ) : null}
           <EnvironmentChip />
         </div>
       </aside>

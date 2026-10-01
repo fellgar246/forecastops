@@ -13,6 +13,18 @@
       "Resource": "${metadata_table_arn}"
     },
     {
+      "Sid": "ReadWriteArtifacts",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "${artifacts_bucket_arn}/*"
+    },
+    {
+      "Sid": "ListArtifacts",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "${artifacts_bucket_arn}"
+    },
+    {
       "Sid": "ReadForecasts",
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
@@ -23,6 +35,17 @@
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
       "Resource": "${forecasts_bucket_arn}"
+    },
+    {
+      "Sid": "PublishApplicationMetrics",
+      "Effect": "Allow",
+      "Action": ["cloudwatch:PutMetricData"],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": "ForecastOps"
+        }
+      }
     },
     {
       "Sid": "WriteApiLogs",

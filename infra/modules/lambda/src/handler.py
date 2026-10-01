@@ -1,6 +1,7 @@
-"""Health handler for the cloud control plane.
+"""Health stub for an unpackaged control-plane function.
 
-This function does not train models or call inference.
+`make aws-deploy` replaces this file with the HTTP API package. This stub
+does not train models or call inference.
 """
 
 import json

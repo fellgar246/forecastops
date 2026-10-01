@@ -131,7 +131,7 @@ def test_explanation_invoke_stays_off_the_training_role() -> None:
 
 def test_architecture_records_exist() -> None:
     adr_dir = ROOT / "docs" / "adr"
-    assert len(list(adr_dir.glob("*.md"))) == 7
+    assert len(list(adr_dir.glob("*.md"))) == 8
     assert (ROOT / "docs" / "architecture" / "overview.md").is_file()
 
 

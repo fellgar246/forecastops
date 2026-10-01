@@ -1,8 +1,11 @@
 """Forecast lifecycle operations. SQL stays in the repository."""
 
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
+
+import structlog
 
 from forecastops_api.artifacts import (
     PRESIGNED_UPLOAD_SECONDS,
@@ -13,6 +16,7 @@ from forecastops_api.artifacts import (
 )
 from forecastops_api.errors import ApiError
 from forecastops_api.forecast_jobs import ForecastExecutor, ForecastPredictor
+from forecastops_api.observability import record_data_quality
 from forecastops_api.persistence import (
     DatasetRow,
     ForecastRunRow,
@@ -20,7 +24,7 @@ from forecastops_api.persistence import (
     PromotionDecisionRow,
     TrainingRunRow,
 )
-from forecastops_api.repositories import Repository
+from forecastops_api.repositories import MetadataRepository
 from forecastops_api.runner import LocalJobRunner
 from forecastops_api.schemas import (
     ApproveRequest,
@@ -54,7 +58,7 @@ from forecastops_api.series import (
 from forecastops_api.settings import ExecutionMode, Settings
 from forecastops_contracts import SCHEMA_VERSION
 from forecastops_ml.data import load_dataset, validate_dataset
-from forecastops_ml.data.quality import ValidationConfig
+from forecastops_ml.data.quality import ValidationConfig, unexpected_category_count
 from forecastops_ml.inference import BatchCapacityError, BatchInference, admit_forecast
 from forecastops_ml.promotion.models import ModelStatus, RegistryStatus
 from forecastops_ml.registry import (
@@ -74,7 +78,7 @@ class ForecastService:
 
     def __init__(
         self,
-        repository: Repository,
+        repository: MetadataRepository,
         settings: Settings,
         artifacts: ArtifactStore,
         registry: ModelRegistry | None = None,
@@ -167,12 +171,30 @@ class ForecastService:
         """Run the quality checks and store the report on the dataset."""
 
         dataset = _require_dataset(self._repository, dataset_id)
+        started = time.perf_counter()
         frame, dimensions = load_dataset(Path(dataset.uri))
         as_of = body.as_of or dataset.date_max or date.today()
         report = validate_dataset(frame, dimensions, ValidationConfig(as_of=as_of))
         dataset.status = report.status
         dataset.quality_report = report.to_dict()
         self._repository.save()
+        age_hours = 0.0
+        if dataset.date_max is not None:
+            age_hours = max((as_of - dataset.date_max).total_seconds() / 3600, 0.0)
+        record_data_quality(
+            latest_data_age_hours=age_hours,
+            missing_value_rate=report.missing_value_rate,
+            duplicate_rate=report.duplicate_rate,
+            stockout_rate=report.stockout_rate,
+            unknown_category_count=unexpected_category_count(frame, dimensions.categories),
+        )
+        structlog.get_logger().info(
+            "dataset.validated",
+            dataset_id=dataset.id,
+            status=dataset.status,
+            artifact_uri=dataset.uri,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+        )
         return dataset
 
     def start_training(self, body: TrainingCreate) -> TrainingRunRow:
@@ -762,7 +784,7 @@ def _promotion_body(decisions: list[PromotionDecisionRow]) -> PromotionBody | No
     )
 
 
-def _require_dataset(repository: Repository, dataset_id: str) -> DatasetRow:
+def _require_dataset(repository: MetadataRepository, dataset_id: str) -> DatasetRow:
     dataset = repository.get_dataset(dataset_id)
     if dataset is None:
         raise ApiError(404, "not_found", "Dataset was not found.")
@@ -777,7 +799,7 @@ def _apply_registry_entry(model: ModelVersionRow, entry: RegistryEntry | None) -
     model.registry_status = entry.status.value
 
 
-def _require_model(repository: Repository, model_id: str) -> ModelVersionRow:
+def _require_model(repository: MetadataRepository, model_id: str) -> ModelVersionRow:
     model = repository.get_model(model_id)
     if model is None:
         raise ApiError(404, "not_found", "Model was not found.")

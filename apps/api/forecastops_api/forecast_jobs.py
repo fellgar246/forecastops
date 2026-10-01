@@ -1,19 +1,23 @@
 """Run a queued forecast through local or batch inference.
 
-The worker resolves the approved model, writes ``forecasts/{id}/forecast.json``,
+The worker resolves the approved model, writes
+``tenant/{tenant_id}/forecasts/{id}/forecast.json``,
 and loads those points back into metadata. A failure is stored as ``FAILED``
 with an English message that does not include dataset rows.
 """
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
 import pyarrow as pa
+import structlog
 
 from forecastops_api.artifacts import ArtifactStore
+from forecastops_api.observability import record_forecast_job
 from forecastops_api.persistence import ForecastPointRow, ForecastRunRow
-from forecastops_api.repositories import Repository
+from forecastops_api.repositories import MetadataRepository
 from forecastops_api.settings import ExecutionMode, Settings
 from forecastops_ml.data import load_dataset
 from forecastops_ml.inference import (
@@ -48,7 +52,7 @@ class ForecastExecutor:
 
     def __init__(
         self,
-        repository: Repository,
+        repository: MetadataRepository,
         artifacts: ArtifactStore,
         batch: BatchInference | None = None,
         predictor: ForecastPredictor | None = None,
@@ -63,24 +67,39 @@ class ForecastExecutor:
 
         if forecast.status != "QUEUED":
             return
-        forecast.status = advance_status(forecast.status, "start")
-        self._repository.save()
-        result = execute_prediction(lambda: self._predict(forecast))
-        if result.status != "SUCCEEDED":
-            self._fail(forecast, result.error_message or "Batch inference failed.")
-            return
+        started = time.perf_counter()
         try:
-            body = forecast_document(result.points)
-            name = f"{forecast.id}/forecast.json"
-            uri = self._artifacts.put("forecasts", name, body)
-            loaded = load_forecast_document(self._artifacts.get(uri))
-            self._repository.add_points([_point_row(forecast.id, point) for point in loaded])
-            forecast.output_uri = uri
-            forecast.error_message = None
-            forecast.status = advance_status(forecast.status, "succeed")
+            forecast.status = advance_status(forecast.status, "start")
             self._repository.save()
-        except Exception as exc:
-            self._fail(forecast, public_inference_error(exc))
+            result = execute_prediction(lambda: self._predict(forecast))
+            if result.status != "SUCCEEDED":
+                self._fail(forecast, result.error_message or "Batch inference failed.")
+                return
+            try:
+                body = forecast_document(result.points)
+                name = f"{forecast.id}/forecast.json"
+                uri = self._artifacts.put("forecasts", name, body)
+                loaded = load_forecast_document(self._artifacts.get(uri))
+                self._repository.add_points([_point_row(forecast.id, point) for point in loaded])
+                forecast.output_uri = uri
+                forecast.error_message = None
+                forecast.status = advance_status(forecast.status, "succeed")
+                self._repository.save()
+            except Exception as exc:
+                self._fail(forecast, public_inference_error(exc))
+        finally:
+            if forecast.status in {"SUCCEEDED", "FAILED"}:
+                outcome = "succeeded" if forecast.status == "SUCCEEDED" else "failed"
+                duration = time.perf_counter() - started
+                record_forecast_job(outcome=outcome, latency_seconds=duration)
+                structlog.get_logger().info(
+                    "forecast.finished",
+                    forecast_run_id=forecast.id,
+                    model_version_id=forecast.model_version_id,
+                    status=forecast.status,
+                    artifact_uri=forecast.output_uri,
+                    duration_seconds=round(duration, 3),
+                )
 
     def _fail(self, forecast: ForecastRunRow, message: str) -> None:
         forecast.status = advance_status(forecast.status, "fail")
@@ -107,6 +126,7 @@ class ForecastExecutor:
                 model_name=model.id,
                 horizon=forecast.horizon,
                 granularity=forecast.granularity,
+                object_prefix=f"tenant/{forecast.tenant_id}",
             )
         frame = _frame(dataset.uri)
         if model.model_family == "deepar":

@@ -27,6 +27,7 @@ ROUTES = {
     "/forecasts/{forecast_id}",
     "/forecasts/{forecast_id}/series",
     "/forecasts/{forecast_id}/explanation",
+    "/metrics",
     "/metrics/model-performance",
     "/metrics/data-quality",
     "/admin/retrain",
@@ -35,6 +36,7 @@ ROUTES = {
     "/admin/schedules/monthly_retrain",
     "/admin/retrain-requests",
     "/admin/retrain-requests/{request_id}/confirm",
+    "/admin/monitoring",
 }
 
 

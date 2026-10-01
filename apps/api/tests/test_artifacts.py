@@ -138,8 +138,40 @@ def test_prefix_helper_rejects_a_key_outside_the_allowed_list() -> None:
         require_allowed_key("file.csv")
     with pytest.raises(InvalidArtifactPrefix):
         normalize_prefix("raw/nested")
-    assert require_allowed_key("evaluations/run/report.json") == "evaluations/run/report.json"
+    with pytest.raises(InvalidArtifactPrefix):
+        require_allowed_key("evaluations/run/report.json")
+    with pytest.raises(InvalidArtifactPrefix):
+        require_allowed_key("tenant/other/raw/file.csv", tenant_id="local")
+    assert (
+        require_allowed_key("tenant/local/evaluations/run/report.json")
+        == "tenant/local/evaluations/run/report.json"
+    )
     assert normalize_prefix("forecasts/") == "forecasts"
+
+
+@pytest.mark.parametrize("kind", ["local", "s3"])
+def test_store_rejects_a_foreign_tenant_prefix(kind: str, tmp_path: Path) -> None:
+    if kind == "local":
+        root = tmp_path / "artifacts"
+        owner = LocalArtifactStore(root, tenant_id="alpha")
+        other = LocalArtifactStore(root, tenant_id="beta")
+    else:
+        client = MemoryObjectClient()
+        owner = S3ArtifactStore("forecastops-artifacts", client, tenant_id="alpha")
+        other = S3ArtifactStore("forecastops-artifacts", client, tenant_id="beta")
+
+    owned = owner.put("raw", "observations.csv", b"alpha")
+    foreign = other.put("raw", "observations.csv", b"beta")
+
+    assert "tenant/alpha/" in owned
+    assert foreign.startswith("tenant/beta/") or "/tenant/beta/" in foreign
+    assert owner.get(owned) == b"alpha"
+    assert owned in owner.list("raw")
+    assert foreign not in owner.list("raw")
+    with pytest.raises(InvalidArtifactPrefix):
+        owner.get(foreign)
+    with pytest.raises(InvalidArtifactPrefix):
+        owner.delete(foreign)
 
 
 def test_local_store_rejects_a_uri_outside_its_root(tmp_path: Path) -> None:
@@ -236,12 +268,12 @@ def test_aws_mode_issues_a_presigned_url_and_does_not_store_the_body(
     issued = client.post("/datasets/upload-url", json={"name": "incoming/observations.csv"})
     assert issued.status_code == 200
     issued_body = issued.json()
-    assert issued_body["uri"] == "s3://forecastops-artifacts/raw/observations.csv"
+    assert issued_body["uri"] == "s3://forecastops-artifacts/tenant/local/raw/observations.csv"
     assert issued_body["expires_in"] == 900
     assert "observations.csv" in issued_body["url"]
     assert memory.objects == {}
     assert memory.presign_params == [
-        {"Bucket": "forecastops-artifacts", "Key": "raw/observations.csv"}
+        {"Bucket": "forecastops-artifacts", "Key": "tenant/local/raw/observations.csv"}
     ]
     assert payload.decode() not in issued.text
 

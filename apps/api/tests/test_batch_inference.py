@@ -377,6 +377,10 @@ def _settings(
     for key, value in parse_env_file(ROOT / ".env.example").items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("EXECUTION_MODE", execution_mode)
+    if execution_mode == "aws":
+        monkeypatch.setenv("AUTH_ENABLED", "true")
+        monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_testpool")
+        monkeypatch.setenv("COGNITO_APP_CLIENT_ID", "test-client")
     monkeypatch.setenv("SAGEMAKER_ENABLED", "true" if sagemaker_enabled else "false")
     monkeypatch.setenv("ONLINE_INFERENCE", "true" if online_inference else "false")
     monkeypatch.setenv("ARTIFACTS_BUCKET", "forecastops-artifacts")

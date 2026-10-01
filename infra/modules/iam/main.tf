@@ -61,6 +61,7 @@ resource "aws_iam_policy" "api" {
   name = "forecastops-${var.environment}-api"
   policy = templatefile("${path.module}/../../policies/api.json", {
     metadata_table_arn   = var.metadata_table_arn
+    artifacts_bucket_arn = var.artifacts_bucket_arn
     forecasts_bucket_arn = var.forecasts_bucket_arn
     log_group_arn        = var.log_group_arn
     explanation_role_arn = aws_iam_role.explanation.arn

@@ -8,6 +8,7 @@ __all__ = [
     "explanations",
     "features",
     "inference",
+    "monitoring",
     "pipelines",
     "promotion",
     "registry",

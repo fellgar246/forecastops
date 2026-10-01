@@ -5,13 +5,39 @@ Services reach these rows only through repositories.
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from forecastops_api.db import Base
+from forecastops_api.tenancy import LOCAL_TENANT
 
 
-class DatasetRow(Base):
+class TenantScoped:
+    """Every domain row belongs to one tenant.
+
+    Existing local rows default to ``local``. Queries filter on this column.
+    """
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(64),
+        default=LOCAL_TENANT,
+        server_default=text("'local'"),
+        index=True,
+    )
+
+
+class DatasetRow(TenantScoped, Base):
     """One immutable dataset snapshot."""
 
     __tablename__ = "datasets"
@@ -30,7 +56,7 @@ class DatasetRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class TrainingRunRow(Base):
+class TrainingRunRow(TenantScoped, Base):
     """One training job and the metrics it produced."""
 
     __tablename__ = "training_runs"
@@ -51,7 +77,7 @@ class TrainingRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ModelVersionRow(Base):
+class ModelVersionRow(TenantScoped, Base):
     """One registered model version and its promotion status."""
 
     __tablename__ = "model_versions"
@@ -73,7 +99,7 @@ class ModelVersionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class PromotionDecisionRow(Base):
+class PromotionDecisionRow(TenantScoped, Base):
     """One quality-gate or human promotion decision."""
 
     __tablename__ = "promotion_decisions"
@@ -91,10 +117,17 @@ class PromotionDecisionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ForecastRunRow(Base):
+class ForecastRunRow(TenantScoped, Base):
     """One batch forecast job."""
 
     __tablename__ = "forecast_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_forecast_runs_tenant_idempotency",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_version_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
@@ -105,11 +138,11 @@ class ForecastRunRow(Base):
     status: Mapped[str] = mapped_column(String(32))
     output_uri: Mapped[str] = mapped_column(Text, default="")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class AIExplanationRow(Base):
+class AIExplanationRow(TenantScoped, Base):
     """One explanation attempt for a forecast scope.
 
     ``status`` is ``valid`` only after the draft passes the deterministic checks.
@@ -133,7 +166,7 @@ class AIExplanationRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class DataRefreshMarkerRow(Base):
+class DataRefreshMarkerRow(TenantScoped, Base):
     """One record that a scheduled refresh touched a dataset."""
 
     __tablename__ = "data_refresh_markers"
@@ -144,7 +177,7 @@ class DataRefreshMarkerRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ForecastErrorEvaluationRow(Base):
+class ForecastErrorEvaluationRow(TenantScoped, Base):
     """Forecast error for points whose actuals have arrived."""
 
     __tablename__ = "forecast_error_evaluations"
@@ -157,7 +190,7 @@ class ForecastErrorEvaluationRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class RetrainRequestRow(Base):
+class RetrainRequestRow(TenantScoped, Base):
     """A request to train again. Training starts only after a person confirms it."""
 
     __tablename__ = "retrain_requests"
@@ -177,7 +210,34 @@ class RetrainRequestRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ForecastPointRow(Base):
+class MonitoringReportRow(TenantScoped, Base):
+    """One comparison of a recent window with the training baseline.
+
+    ``status`` is ``HEALTHY``, ``WARNING``, or ``RETRAIN_RECOMMENDED``.
+    A recommendation stores ``retrain_request_id`` and does not start training.
+    """
+
+    __tablename__ = "monitoring_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    model_version_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
+    status: Mapped[str] = mapped_column(String(32))
+    as_of: Mapped[date] = mapped_column(Date)
+    date_max: Mapped[date] = mapped_column(Date)
+    baseline_start: Mapped[date] = mapped_column(Date)
+    baseline_end: Mapped[date] = mapped_column(Date)
+    recent_start: Mapped[date] = mapped_column(Date)
+    recent_end: Mapped[date] = mapped_column(Date)
+    metrics: Mapped[dict[str, object]] = mapped_column(JSON)
+    retrain_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("retrain_requests.id"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ForecastPointRow(TenantScoped, Base):
     """One quantile forecast for a series on a date."""
 
     __tablename__ = "forecast_points"

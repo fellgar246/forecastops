@@ -13,6 +13,7 @@ from forecastops_api.persistence import (  # noqa: F401
     ForecastPointRow,
     ForecastRunRow,
     ModelVersionRow,
+    MonitoringReportRow,
     PromotionDecisionRow,
     RetrainRequestRow,
     TrainingRunRow,

@@ -1,15 +1,19 @@
 """HTTP routes for the local forecast lifecycle."""
 
 from collections.abc import Iterator
-from typing import Annotated
+from datetime import date
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session, sessionmaker
 
 from forecastops_api.artifacts import ArtifactStore
+from forecastops_api.auth import Caller, TokenVerifier, authentication_required, local_caller
+from forecastops_api.dynamodb import DynamoRepository
+from forecastops_api.errors import ApiError
 from forecastops_api.explanations import ExplanationService
-from forecastops_api.repositories import Repository
+from forecastops_api.monitoring import MonitoringService
+from forecastops_api.repositories import MetadataRepository, Repository
 from forecastops_api.schedules import ScheduleService
 from forecastops_api.schemas import (
     AcceptedJob,
@@ -30,6 +34,7 @@ from forecastops_api.schemas import (
     ModelList,
     ModelPerformance,
     ModelResponse,
+    MonitoringReportResponse,
     PresignedUploadRequest,
     PresignedUploadResponse,
     RejectRequest,
@@ -48,16 +53,45 @@ from forecastops_api.services import (
 from forecastops_api.settings import Settings
 from forecastops_ml.registry import ModelRegistry
 
-router = APIRouter()
+
+def require_caller(request: Request) -> Caller:
+    """Return the tenant for this request.
+
+    Local mode with authentication disabled uses tenant ``local``. Cloud mode
+    and any process with authentication enabled require a bearer token.
+    """
+
+    settings: Settings = request.app.state.settings
+    if not authentication_required(settings):
+        return local_caller()
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or token.strip() == "":
+        raise ApiError(401, "unauthorized", "A bearer token is required.")
+    verifier = cast(TokenVerifier, request.app.state.token_verifier)
+    return verifier.verify(token.strip())
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    """Open a session for one request and commit when the handler succeeds."""
+router = APIRouter(dependencies=[Depends(require_caller)])
 
-    factory: sessionmaker[Session] = request.app.state.session_factory
+
+def get_repository(
+    request: Request,
+    caller: Annotated[Caller, Depends(require_caller)],
+) -> Iterator[MetadataRepository]:
+    """Open the metadata adapter for one request.
+
+    Local mode commits the SQL session when the handler succeeds. Cloud mode
+    reads and writes DynamoDB documents and does not open PostgreSQL.
+    """
+
+    if request.app.state.metadata_backend == "dynamodb":
+        yield DynamoRepository(request.app.state.metadata_table, tenant_id=caller.tenant_id)
+        return
+    factory = request.app.state.session_factory
     session = factory()
     try:
-        yield session
+        yield Repository(session, tenant_id=caller.tenant_id)
         session.commit()
     except Exception:
         session.rollback()
@@ -66,17 +100,17 @@ def get_session(request: Request) -> Iterator[Session]:
         session.close()
 
 
-SessionDep = Annotated[Session, Depends(get_session)]
+RepositoryDep = Annotated[MetadataRepository, Depends(get_repository)]
 
 
-def get_service(request: Request, session: SessionDep) -> ForecastService:
+def get_service(request: Request, repository: RepositoryDep) -> ForecastService:
     """Build the forecast service for this request."""
 
     settings: Settings = request.app.state.settings
-    artifacts: ArtifactStore = request.app.state.artifact_store
+    artifacts: ArtifactStore = request.app.state.artifact_store.for_tenant(repository.tenant_id)
     registry: ModelRegistry | None = request.app.state.model_registry
     return ForecastService(
-        Repository(session),
+        repository,
         settings,
         artifacts,
         registry,
@@ -88,23 +122,41 @@ def get_service(request: Request, session: SessionDep) -> ForecastService:
 ServiceDep = Annotated[ForecastService, Depends(get_service)]
 
 
-def get_schedules(service: ServiceDep, session: SessionDep) -> ScheduleService:
+def get_schedules(service: ServiceDep, repository: RepositoryDep) -> ScheduleService:
     """Build the schedule service for this request."""
 
-    return ScheduleService(service, Repository(session))
+    return ScheduleService(service, repository)
 
 
 ScheduleDep = Annotated[ScheduleService, Depends(get_schedules)]
 
 
-def get_explanations(request: Request, session: SessionDep) -> ExplanationService:
+def get_explanations(request: Request, repository: RepositoryDep) -> ExplanationService:
     """Build the explanation service for this request."""
 
     client = getattr(request.app.state, "explanation_client", None)
-    return ExplanationService(Repository(session), request.app.state.settings, client)
+    return ExplanationService(repository, request.app.state.settings, client)
 
 
 ExplanationDep = Annotated[ExplanationService, Depends(get_explanations)]
+
+
+def get_monitoring(
+    request: Request,
+    schedules: ScheduleDep,
+    repository: RepositoryDep,
+) -> MonitoringService:
+    """Build the monitoring service for this request."""
+
+    return MonitoringService(
+        repository,
+        schedules,
+        request.app.state.settings,
+        training_client=getattr(request.app.state, "training_client", None),
+    )
+
+
+MonitoringDep = Annotated[MonitoringService, Depends(get_monitoring)]
 
 
 @router.post("/datasets", status_code=202, response_model=AcceptedJob)
@@ -317,12 +369,23 @@ def get_explanation(
 
 
 @router.get("/metrics/model-performance", response_model=ModelPerformance)
-def model_performance(service: ServiceDep) -> ModelPerformance:
-    """Return stored model metrics."""
+def model_performance(service: ServiceDep, monitoring: MonitoringDep) -> ModelPerformance:
+    """Return stored model metrics and the latest monitoring report."""
 
     return ModelPerformance(
-        items=[service.present_model(row) for row in service.model_performance()]
+        items=[service.present_model(row) for row in service.model_performance()],
+        monitoring=monitoring.latest(),
     )
+
+
+@router.post("/admin/monitoring", response_model=MonitoringReportResponse)
+def run_monitoring(
+    monitoring: MonitoringDep,
+    as_of: Annotated[date | None, Query()] = None,
+) -> MonitoringReportResponse:
+    """Compare the recent window with the training baseline and store the report."""
+
+    return monitoring.run(as_of)
 
 
 @router.get("/metrics/data-quality", response_model=DataQualityList)

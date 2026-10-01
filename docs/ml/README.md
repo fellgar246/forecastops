@@ -1,6 +1,6 @@
 # Forecasting library
 
-`forecastops_ml` is the importable library for dataset access, features, baselines, training, evaluation, batch inference, explanations, and pipelines.
+`forecastops_ml` is the importable library for dataset access, features, baselines, training, evaluation, batch inference, explanations, drift monitoring, and pipelines.
 
 Evaluation scores a forecaster on rolling-origin folds. Training, evaluation, and inference share `build_features`, so a lag or rolling window used at prediction time was knowable at the cutoff.
 
@@ -177,3 +177,37 @@ When a model registry is enabled, the gate records the candidate there. A model 
 A cloud forecast loads a model only when the registry status is `Approved` and the internal status is `APPROVED` or `PRODUCTION`. Pending and rejected registry versions are refused. Local forecasts keep using the internal status alone.
 
 When no production evaluation exists, `reference_report` scores seasonal naive on the same frame and dataset version. Daily frames use a 7-day lag. Weekly frames use a 52-week lag. A production report is returned unchanged when one is supplied.
+
+## Drift monitoring
+
+Monitoring compares the most recent 28 days with the earlier rows of the same dataset. Those earlier rows are the training baseline. The recent window ends on the dataset's latest date and includes that date.
+
+Price and `units_sold` use the population stability index and a Kolmogorov-Smirnov statistic. PSI bins the baseline at 10 quantile intervals, drops duplicate edges, and compares bin shares:
+
+```text
+sum((recent_share - baseline_share) * ln(recent_share / baseline_share))
+```
+
+A bin share below `0.0001` is raised to `0.0001`, then both share vectors are scaled so they sum to 1. Values outside the outer edges stay in the first or last bin. A constant baseline uses one bin for that value and a second bin for every other value. The Kolmogorov-Smirnov statistic is the largest absolute gap between the two empirical distribution functions.
+
+Promotion frequency, zero-demand frequency, and stock-out frequency use the absolute difference of the two rates. Store and category coverage use the absolute difference of each label's share. A missing promotion or stock-out column is stored as null and does not change the status.
+
+The status is `HEALTHY`, `WARNING`, or `RETRAIN_RECOMMENDED`. Retraining is recommended when any of these hold:
+
+```text
+recent WAPE is more than 20% worse than the approved model's WAPE
+OR any PSI is above 0.2
+OR dataset age is greater than 30 days
+```
+
+Dataset age is `as_of - date_max` in days. An age of 30 days is still healthy. A WAPE that is exactly 20% worse is still healthy. PSI of exactly 0.2 is a warning, not a retrain recommendation.
+
+`WARNING` is a moderate shift that does not meet a retrain rule: PSI above 0.1 and at or below 0.2, or a frequency or coverage move above 0.05.
+
+`PSI_RETRAIN_THRESHOLD` defaults to `0.2`. `PSI_WARNING_THRESHOLD` defaults to `0.1`. `WAPE_DEGRADATION_LIMIT` defaults to `0.2`. `MAX_DATASET_AGE_DAYS` defaults to `30`. `FREQUENCY_WARNING_DELTA` defaults to `0.05`. `RECENT_WINDOW_DAYS` defaults to `28`. Those values are in `.env.example`.
+
+`POST /admin/monitoring` stores the report. `GET /metrics/model-performance` returns it with the model scores. When the status is `RETRAIN_RECOMMENDED`, the run opens a retrain request and stops. It does not start training and it does not approve a model. Confirm that request separately to train. The new model is still not promoted.
+
+```bash
+make monitor-drift
+```

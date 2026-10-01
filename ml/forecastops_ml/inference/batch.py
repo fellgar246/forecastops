@@ -151,6 +151,7 @@ class BatchInference:
         model_name: str,
         horizon: int,
         granularity: str,
+        object_prefix: str = "",
     ) -> tuple[StoredForecastPoint, ...]:
         """Run one batch job and return the points in its artifact.
 
@@ -174,8 +175,9 @@ class BatchInference:
             raise InferenceError("Forecast granularity must be day or week.")
 
         job_name = transform_job_name(run_id)
-        input_uri = f"s3://{self._bucket}/forecasts/{run_id}/input.json"
-        output_prefix = f"s3://{self._bucket}/forecasts/{run_id}/"
+        folder = _forecast_folder(run_id, object_prefix)
+        input_uri = f"s3://{self._bucket}/{folder}input.json"
+        output_prefix = f"s3://{self._bucket}/{folder}"
         output_uri = f"{output_prefix}forecast.json"
         request = transform_request(
             job_name=job_name,
@@ -194,6 +196,22 @@ class BatchInference:
         if status != "Completed":
             raise InferenceError("Batch inference did not finish.")
         return load_forecast_document(objects.get_bytes(output_uri))
+
+
+def _forecast_folder(run_id: str, object_prefix: str) -> str:
+    """Return the forecasts folder, optionally under a tenant prefix."""
+
+    cleaned = object_prefix.strip().strip("/")
+    if cleaned and not _safe_object_prefix(cleaned):
+        raise InferenceError("Batch inference output must be written under forecasts/.")
+    if cleaned:
+        return f"{cleaned}/forecasts/{run_id}/"
+    return f"forecasts/{run_id}/"
+
+
+def _safe_object_prefix(prefix: str) -> bool:
+    parts = prefix.split("/")
+    return bool(parts) and all(part not in {"", ".", ".."} and "\\" not in part for part in parts)
 
 
 def transform_job_name(run_id: str) -> str:

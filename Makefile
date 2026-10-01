@@ -1,4 +1,4 @@
-.PHONY: test lint seed-data profile-data train-deepar start-pipeline refresh-forecast evaluate-forecasts request-retrain aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
+.PHONY: test lint seed-data profile-data train-deepar start-pipeline refresh-forecast evaluate-forecasts request-retrain monitor-drift aws-plan aws-deploy aws-status aws-cost-check aws-destroy aws-clean-artifacts
 
 test:
 	uv run pytest
@@ -39,6 +39,9 @@ evaluate-forecasts:
 
 request-retrain:
 	uv run python scripts/schedule/run_schedule.py monthly_retrain
+
+monitor-drift:
+	uv run python scripts/monitor/run_monitoring.py
 
 aws-plan:
 	./scripts/aws/plan.sh

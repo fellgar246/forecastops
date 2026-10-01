@@ -302,10 +302,91 @@ class DatasetCatalog(BaseModel):
     skus: list[SkuEntry]
 
 
+class NumericDrift(BaseModel):
+    """PSI and KS for one numeric column."""
+
+    feature: str
+    psi: float
+    ks: float
+
+
+class FrequencyDrift(BaseModel):
+    """Absolute change in one rate. Null fields mean the column was absent."""
+
+    feature: str
+    baseline: float | None
+    recent: float | None
+    absolute_delta: float | None
+
+
+class CoverageDrift(BaseModel):
+    """Absolute share changes for stores or categories."""
+
+    feature: str
+    absolute_deltas: dict[str, float]
+    max_absolute_delta: float
+
+
+class DriftThresholdsBody(BaseModel):
+    """Limits stored with a monitoring report."""
+
+    psi_warning: float
+    psi_retrain: float
+    wape_degradation_limit: float
+    max_dataset_age_days: int
+    frequency_warning_delta: float
+    recent_window_days: int
+    psi_bin_count: int
+
+
+class MonitoringMetrics(BaseModel):
+    """Metric values stored on a monitoring report."""
+
+    dataset_age_days: int
+    approved_wape: float | None
+    recent_wape: float | None
+    wape_degradation: float | None
+    numeric: list[NumericDrift]
+    frequencies: list[FrequencyDrift]
+    coverage: list[CoverageDrift]
+    reasons: list[str]
+    thresholds: DriftThresholdsBody
+
+
+MonitoringStatus = Literal["HEALTHY", "WARNING", "RETRAIN_RECOMMENDED"]
+
+
+class MonitoringReportResponse(BaseModel):
+    """A persisted comparison of the recent window with the training baseline."""
+
+    id: str
+    status: MonitoringStatus
+    model_version_id: str
+    dataset_id: str
+    as_of: date
+    date_max: date
+    baseline_start: date
+    baseline_end: date
+    recent_start: date
+    recent_end: date
+    dataset_age_days: int
+    approved_wape: float | None
+    recent_wape: float | None
+    wape_degradation: float | None
+    numeric: list[NumericDrift]
+    frequencies: list[FrequencyDrift]
+    coverage: list[CoverageDrift]
+    reasons: list[str]
+    thresholds: DriftThresholdsBody
+    retrain_request_id: str | None
+    created_at: datetime
+
+
 class ModelPerformance(BaseModel):
-    """Scores stored on registered models."""
+    """Scores stored on registered models, plus the latest monitoring report."""
 
     items: list[ModelResponse]
+    monitoring: MonitoringReportResponse | None = None
 
 
 class DataQualityItem(BaseModel):

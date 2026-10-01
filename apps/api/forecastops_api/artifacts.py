@@ -4,11 +4,14 @@ Services depend on :class:`ArtifactStore`. Settings choose a directory on disk
 or one remote bucket. Object bodies are never written to logs.
 """
 
+from __future__ import annotations
+
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast, runtime_checkable
 
 from forecastops_api.settings import Settings
+from forecastops_api.tenancy import LOCAL_TENANT, validate_tenant_id
 
 ALLOWED_PREFIXES: tuple[str, ...] = (
     "raw",
@@ -32,6 +35,9 @@ class ArtifactNotFound(FileNotFoundError):
 
 class ArtifactStore(Protocol):
     """Read and write artifact bytes addressed by prefix."""
+
+    def for_tenant(self, tenant_id: str) -> ArtifactStore:
+        """Return a store that refuses keys outside ``tenant_id``."""
 
     def put(self, prefix: str, name: str, body: bytes) -> str:
         """Store ``body`` and return its uri."""
@@ -101,24 +107,38 @@ def normalize_prefix(prefix: str) -> str:
     return cleaned
 
 
-def require_allowed_key(key: str) -> str:
-    """Return ``key`` when its top-level prefix is allowed."""
+def tenant_key_prefix(tenant_id: str) -> str:
+    """Return the object-key prefix reserved for ``tenant_id``."""
+
+    return f"tenant/{_tenant_or_reject(tenant_id)}"
+
+
+def require_allowed_key(key: str, *, tenant_id: str | None = None) -> str:
+    """Return ``key`` when it stays inside one tenant and an allowed prefix."""
 
     cleaned = key.strip().lstrip("/")
-    if "/" not in cleaned:
-        raise InvalidArtifactPrefix("Artifact key must include an allowed prefix and a name.")
-    prefix, name = cleaned.split("/", 1)
+    if "\\" in cleaned or cleaned.startswith("/") or "//" in key:
+        raise InvalidArtifactPrefix("Artifact key must stay inside the tenant prefix.")
+    parts = cleaned.split("/")
+    if len(parts) < 4 or parts[0] != "tenant":
+        raise InvalidArtifactPrefix(
+            "Artifact key must start with tenant/{tenant_id}/ and an allowed prefix."
+        )
+    owner = _tenant_or_reject(parts[1])
+    if tenant_id is not None and owner != _tenant_or_reject(tenant_id):
+        raise InvalidArtifactPrefix("Artifact key is outside this tenant.")
+    normalized = normalize_prefix(parts[2])
+    name = "/".join(parts[3:])
+    _reject_unsafe_name(name)
+    return f"tenant/{owner}/{normalized}/{name}"
+
+
+def object_key(prefix: str, name: str, *, tenant_id: str = LOCAL_TENANT) -> str:
+    """Join a tenant, an allowed prefix, and a relative object name."""
+
     normalized = normalize_prefix(prefix)
     _reject_unsafe_name(name)
-    return f"{normalized}/{name}"
-
-
-def object_key(prefix: str, name: str) -> str:
-    """Join an allowed prefix and a relative object name."""
-
-    normalized = normalize_prefix(prefix)
-    _reject_unsafe_name(name)
-    return f"{normalized}/{name.lstrip('/')}"
+    return f"{tenant_key_prefix(tenant_id)}/{normalized}/{name.lstrip('/')}"
 
 
 def select_artifact_store(
@@ -151,13 +171,19 @@ def build_s3_client(region: str) -> ObjectStorageClient:
 class LocalArtifactStore:
     """Store artifacts as files under one directory."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, tenant_id: str = LOCAL_TENANT) -> None:
         self._root = root.expanduser().resolve()
+        self._tenant_id = validate_tenant_id(tenant_id)
+
+    def for_tenant(self, tenant_id: str) -> LocalArtifactStore:
+        """Return a store bound to ``tenant_id`` in the same directory."""
+
+        return LocalArtifactStore(self._root, tenant_id=tenant_id)
 
     def put(self, prefix: str, name: str, body: bytes) -> str:
         """Write ``body`` under ``prefix`` and return its path."""
 
-        path = self._path_for_key(object_key(prefix, name))
+        path = self._path_for_key(object_key(prefix, name, tenant_id=self._tenant_id))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(body)
         return str(path)
@@ -173,7 +199,7 @@ class LocalArtifactStore:
     def list(self, prefix: str) -> list[str]:
         """Return file paths stored under ``prefix``."""
 
-        directory = self._root / normalize_prefix(prefix)
+        directory = self._root / "tenant" / self._tenant_id / normalize_prefix(prefix)
         if not directory.exists():
             return []
         return sorted(str(path.resolve()) for path in directory.rglob("*") if path.is_file())
@@ -187,7 +213,7 @@ class LocalArtifactStore:
         path.unlink(missing_ok=True)
 
     def _path_for_key(self, key: str) -> Path:
-        relative = Path(*require_allowed_key(key).split("/"))
+        relative = Path(*require_allowed_key(key, tenant_id=self._tenant_id).split("/"))
         return self._root / relative
 
     def _path_for_uri(self, uri: str) -> Path:
@@ -199,24 +225,36 @@ class LocalArtifactStore:
             relative = resolved.relative_to(self._root)
         except ValueError as exc:
             raise InvalidArtifactPrefix("Artifact uri is outside the store.") from exc
-        require_allowed_key(relative.as_posix())
+        require_allowed_key(relative.as_posix(), tenant_id=self._tenant_id)
         return resolved
 
 
 class S3ArtifactStore:
     """Store artifacts in one remote bucket."""
 
-    def __init__(self, bucket: str, client: ObjectStorageClient) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        client: ObjectStorageClient,
+        *,
+        tenant_id: str = LOCAL_TENANT,
+    ) -> None:
         cleaned = bucket.strip()
         if not cleaned:
             raise ValueError("Artifact bucket name is required.")
         self._bucket = cleaned
         self._client = client
+        self._tenant_id = validate_tenant_id(tenant_id)
+
+    def for_tenant(self, tenant_id: str) -> S3ArtifactStore:
+        """Return a store bound to ``tenant_id`` in the same bucket."""
+
+        return S3ArtifactStore(self._bucket, self._client, tenant_id=tenant_id)
 
     def put(self, prefix: str, name: str, body: bytes) -> str:
         """Upload ``body`` and return its object uri."""
 
-        key = object_key(prefix, name)
+        key = object_key(prefix, name, tenant_id=self._tenant_id)
         self._client.put_object(Bucket=self._bucket, Key=key, Body=body)
         return self._uri(key)
 
@@ -242,7 +280,7 @@ class S3ArtifactStore:
     def list(self, prefix: str) -> list[str]:
         """Return object uris stored under ``prefix``."""
 
-        key_prefix = f"{normalize_prefix(prefix)}/"
+        key_prefix = f"{tenant_key_prefix(self._tenant_id)}/{normalize_prefix(prefix)}/"
         uris: list[str] = []
         token: str | None = None
         seen: set[str] = set()
@@ -255,7 +293,7 @@ class S3ArtifactStore:
                         continue
                     key = item.get("Key")
                     if isinstance(key, str):
-                        uris.append(self._uri(require_allowed_key(key)))
+                        uris.append(self._uri(require_allowed_key(key, tenant_id=self._tenant_id)))
             if page.get("IsTruncated") is not True:
                 break
             next_token = page.get("NextContinuationToken")
@@ -280,7 +318,7 @@ class S3ArtifactStore:
     ) -> tuple[str, str]:
         """Return a pre-signed upload URL and the object uri."""
 
-        key = object_key(prefix, name)
+        key = object_key(prefix, name, tenant_id=self._tenant_id)
         url = self._client.generate_presigned_url(
             "put_object",
             Params={"Bucket": self._bucket, "Key": key},
@@ -308,7 +346,7 @@ class S3ArtifactStore:
         bucket, separator, key = rest.partition("/")
         if separator == "" or bucket != self._bucket or key == "":
             raise InvalidArtifactPrefix("Artifact uri is outside this bucket.")
-        return require_allowed_key(key)
+        return require_allowed_key(key, tenant_id=self._tenant_id)
 
 
 def upload_object_name(filename: str) -> str:
@@ -317,8 +355,15 @@ def upload_object_name(filename: str) -> str:
     candidate = filename.replace("\\", "/").split("/")[-1].strip()
     if candidate in {"", ".", ".."}:
         raise InvalidArtifactPrefix("Dataset file name is required.")
-    object_key("raw", candidate)
+    object_key("raw", candidate, tenant_id=LOCAL_TENANT)
     return candidate
+
+
+def _tenant_or_reject(value: str) -> str:
+    try:
+        return validate_tenant_id(value)
+    except ValueError as exc:
+        raise InvalidArtifactPrefix(str(exc)) from exc
 
 
 def _reject_unsafe_name(name: str) -> None:

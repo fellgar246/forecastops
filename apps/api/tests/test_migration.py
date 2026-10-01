@@ -17,6 +17,7 @@ def test_metadata_includes_domain_tables() -> None:
         "promotion_decisions",
         "forecast_runs",
         "forecast_points",
+        "monitoring_reports",
     } <= names
 
 
@@ -35,5 +36,10 @@ def test_initial_migration_applies(tmp_path, monkeypatch) -> None:
     tables = set(inspect(engine).get_table_names())
     assert "datasets" in tables
     assert "forecast_points" in tables
+    assert "monitoring_reports" in tables
     columns = {column["name"] for column in inspect(engine).get_columns("forecast_runs")}
     assert "idempotency_key" in columns
+    dataset_columns = {column["name"] for column in inspect(engine).get_columns("datasets")}
+    assert "tenant_id" in dataset_columns
+    point_columns = {column["name"] for column in inspect(engine).get_columns("forecast_points")}
+    assert "tenant_id" in point_columns
