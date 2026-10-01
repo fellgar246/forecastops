@@ -142,6 +142,14 @@ Tree-model signals may list `positive_drivers` and `negative_drivers`. Those nam
 
 A draft is rejected when a forecast total in the text is not in the package, a named signal is not in the package, or `uncertainty_note` is empty. Rejected drafts increment `explanation_validation_failures` and are not returned as explanations. The same forecast, scope, and prompt version returns the stored explanation on the next request. `MAX_BEDROCK_CALLS_PER_DAY`, `MAX_BEDROCK_INPUT_TOKENS`, and `MAX_BEDROCK_OUTPUT_TOKENS` stop another provider call. Token counts and latency are logged. The full dataset and the raw prompt are not.
 
+## Evaluation suite
+
+`make evaluate-suite` scores `benchmark-v1` and writes `var/evaluation-report.json`. The dataset is the `test` profile at seed `20260921`: 436 daily rows and 70 store-SKU weeks. Naive and seasonal naive score the daily frame. Gradient boosting scores the weekly frame. Both use 5 rolling-origin folds and a horizon of 1 period. The checked-in WAPE for each family is in `ml/forecastops_ml/evaluation/fixtures/benchmark-v1.json`. A measured WAPE more than `0.000001` away from that value fails the run. The report stores the measured WAPE.
+
+The same command grades 50 forecast explanations with the local mock. The scenarios cover ordinary demand, a promotion, a stock-out context signal, a wide prediction interval, and a flat forecast. Each scenario records pass or fail for number preservation, known signals, and a non-empty uncertainty note. Any failure fails the run. The suite does not call Bedrock.
+
+`EXPLANATION_JUDGE_ENABLED=true` asks for readability, groundedness, and actionability, each from 1 to 5. Those scores are averages on the report and do not decide pass or fail. The judge calls Bedrock only when `BEDROCK_ENABLED=true` as well. With Bedrock left off, the judge is skipped.
+
 ## Training pipeline
 
 One manual command runs Validate, Process, Train, Evaluate, Quality Gate, and Register. Register runs only when the quality gate leaves the candidate pending approval. A rejected candidate is not registered, and the gate does not approve a model by itself.

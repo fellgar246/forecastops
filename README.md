@@ -78,7 +78,7 @@ Terraform under `infra/` describes an optional cloud layout. The default `dev` a
 
 ## Delivery
 
-Pull requests run CI. That workflow lints and typechecks the backend, runs the backend tests, runs the ML unit tests and the leakage tests, lints and typechecks the web app, runs the web tests, checks Terraform formatting, validates the infrastructure, and scans the tree with Trivy.
+Pull requests run CI. That workflow lints and typechecks the backend, runs the backend tests, runs the ML unit tests and the leakage tests, lints and typechecks the web app, runs the web tests, checks Terraform formatting, validates the infrastructure, and scans the tree with Trivy. An evaluation job scores the frozen benchmark and the explanation checks, then uploads the JSON report. `make evaluate-suite` writes that report locally to `var/evaluation-report.json`. It does not call Bedrock unless `EXPLANATION_JUDGE_ENABLED` and `BEDROCK_ENABLED` are both true, and those judge scores do not decide whether the run passes.
 
 A push to `main` builds the API package, applies `dev`, and calls `GET /health` and `GET /health/aws`. It does not start training or batch inference. `make aws-smoke` is that health check. It stops after those two routes.
 

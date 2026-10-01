@@ -1,0 +1,27 @@
+{
+  "benchmark_version": "benchmark-v1",
+  "daily_row_count": 436,
+  "folds": 5,
+  "horizon": 1,
+  "models": [
+    {
+      "family": "naive",
+      "grain": "day",
+      "wape": 0.30413625304136255
+    },
+    {
+      "family": "seasonal_naive",
+      "grain": "day",
+      "wape": 0.2798053527980535
+    },
+    {
+      "family": "gradient_boosting",
+      "grain": "week",
+      "wape": 0.27095453805329717
+    }
+  ],
+  "profile": "test",
+  "seed": 20260921,
+  "tolerance": 0.000001,
+  "weekly_row_count": 70
+}

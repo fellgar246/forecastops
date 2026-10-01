@@ -40,7 +40,7 @@ Apply is intentionally not part of the local workflow. Before any future apply, 
 
 ## Delivery
 
-Pull requests run lint, typecheck, backend tests, ML unit tests, leakage tests, web tests, Terraform format and validate, and a Trivy scan. A push to `main` packages the API, applies `dev`, and calls `/health` and `/health/aws`. That deploy does not start a training job or a batch inference job. Training runs only from the manual Train model workflow, and only from `main`, because the deploy role trusts that branch. Destroy demo is manual as well. Cloud workflows assume `GitHubDeployRole` with OpenID Connect and do not read static access keys. `ListTrainingJobs` on that role uses a wildcard because that API has no resource ARN. The manual workflow uses it to count jobs before it starts one pipeline.
+Pull requests run lint, typecheck, backend tests, ML unit tests, leakage tests, web tests, Terraform format and validate, and a Trivy scan. A separate evaluation job scores the frozen benchmark and the explanation checks, then uploads a JSON report of the measured WAPE values and the check counts. That job does not call Bedrock. A push to `main` packages the API, applies `dev`, and calls `/health` and `/health/aws`. That deploy does not start a training job or a batch inference job. Training runs only from the manual Train model workflow, and only from `main`, because the deploy role trusts that branch. Destroy demo is manual as well. Cloud workflows assume `GitHubDeployRole` with OpenID Connect and do not read static access keys. `ListTrainingJobs` on that role uses a wildcard because that API has no resource ARN. The manual workflow uses it to count jobs before it starts one pipeline.
 
 ## Schedules
 

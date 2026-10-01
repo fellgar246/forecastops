@@ -2,6 +2,7 @@
 
 import math
 import re
+from dataclasses import dataclass
 from typing import NoReturn
 
 from pydantic import ValidationError
@@ -50,11 +51,36 @@ def parse_draft(payload: object) -> ExplanationDraft:
         _fail("schema", "The explanation failed the schema check.")
 
 
+@dataclass(frozen=True)
+class ExplanationChecks:
+    """Pass or fail for number preservation, known signals, and uncertainty."""
+
+    number_preserved: bool
+    signals_known: bool
+    uncertainty_acknowledged: bool
+
+
+def grade_explanation(package: ExplanationPackage, draft: ExplanationDraft) -> ExplanationChecks:
+    """Record each deterministic check. One failure does not hide the others.
+
+    Grading does not increment :func:`explanation_validation_failures`. That
+    counter belongs to drafts rejected by :func:`validate_explanation`.
+    """
+
+    return ExplanationChecks(
+        number_preserved=_forecast_numbers_ok(package, draft),
+        signals_known=_signals_ok(package, draft),
+        uncertainty_acknowledged=draft.uncertainty_note.strip() != "",
+    )
+
+
 def validate_explanation(package: ExplanationPackage, draft: ExplanationDraft) -> None:
     """Check number preservation, known signals, and a non-empty uncertainty note."""
 
-    _check_forecast_numbers(package, draft)
-    _check_signals(package, draft)
+    if not _forecast_numbers_ok(package, draft):
+        _fail("forecast_numbers", "The explanation failed the forecast_numbers check.")
+    if not _signals_ok(package, draft):
+        _fail("known_signals", "The explanation failed the known_signals check.")
     if draft.uncertainty_note.strip() == "":
         _fail("uncertainty_note", "The explanation failed the uncertainty_note check.")
 
@@ -71,7 +97,7 @@ def format_number(value: float) -> str:
     return text
 
 
-def _check_forecast_numbers(package: ExplanationPackage, draft: ExplanationDraft) -> None:
+def _forecast_numbers_ok(package: ExplanationPackage, draft: ExplanationDraft) -> bool:
     allowed = _package_numbers(package)
     totals = _forecast_totals(package)
     prose = "\n".join(
@@ -87,16 +113,15 @@ def _check_forecast_numbers(package: ExplanationPackage, draft: ExplanationDraft
             continue
         if any(math.isclose(number, candidate, rel_tol=0.0, abs_tol=1e-6) for candidate in allowed):
             continue
-        _fail("forecast_numbers", "The explanation failed the forecast_numbers check.")
+        return False
+    return True
 
 
-def _check_signals(package: ExplanationPackage, draft: ExplanationDraft) -> None:
+def _signals_ok(package: ExplanationPackage, draft: ExplanationDraft) -> bool:
     known = {signal.name for signal in package.signals}
     known.update(package.positive_drivers)
     known.update(package.negative_drivers)
-    for name in draft.drivers:
-        if name not in known:
-            _fail("known_signals", "The explanation failed the known_signals check.")
+    return all(name in known for name in draft.drivers)
 
 
 def _package_numbers(package: ExplanationPackage) -> list[float]:

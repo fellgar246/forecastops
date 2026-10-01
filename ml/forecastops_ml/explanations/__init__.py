@@ -18,14 +18,17 @@ from forecastops_ml.explanations.models import (
 from forecastops_ml.explanations.package import build_explanation_package
 from forecastops_ml.explanations.prompt import PROMPT_VERSION, render_prompt
 from forecastops_ml.explanations.validation import (
+    ExplanationChecks,
     ExplanationValidationError,
     explanation_validation_failures,
+    grade_explanation,
     validate_explanation,
 )
 
 __all__ = [
     "PROMPT_VERSION",
     "BedrockExplanationClient",
+    "ExplanationChecks",
     "ExplanationClient",
     "ExplanationDraft",
     "ExplanationPackage",
@@ -35,6 +38,7 @@ __all__ = [
     "Signal",
     "build_explanation_package",
     "explanation_validation_failures",
+    "grade_explanation",
     "render_prompt",
     "select_explanation_client",
     "validate_explanation",
